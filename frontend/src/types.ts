@@ -1,5 +1,4 @@
 export type ProjectStatus = 'idea' | 'backlog' | 'active' | 'paused' | 'done'
-export type TaskStatus = 'todo' | 'doing' | 'done'
 
 export interface Repo {
   full_name: string
@@ -16,12 +15,20 @@ export interface Repo {
 
 export interface Task {
   id: number
-  project_id: number
+  column_id: number
   title: string
-  status: TaskStatus
   sort_order: number
   created_at: string
   updated_at: string
+}
+
+export interface Column {
+  id: number
+  project_id: number
+  name: string
+  sort_order: number
+  is_done: number
+  tasks: Task[]
 }
 
 export interface Project {
@@ -34,7 +41,7 @@ export interface Project {
   created_at: string
   updated_at: string
   repos: Repo[]
-  tasks?: Task[]
+  columns?: Column[]
   task_counts?: { total: number; done: number }
 }
 
@@ -50,18 +57,11 @@ export interface SyncResult {
 }
 
 export const PROJECT_STATUSES: ProjectStatus[] = ['idea', 'backlog', 'active', 'paused', 'done']
-export const TASK_STATUSES: TaskStatus[] = ['todo', 'doing', 'done']
 
 export const STATUS_LABELS: Record<ProjectStatus, string> = {
   idea: 'Idea',
   backlog: 'Backlog',
   active: 'Active',
   paused: 'Paused',
-  done: 'Done',
-}
-
-export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
-  todo: 'Todo',
-  doing: 'Doing',
   done: 'Done',
 }

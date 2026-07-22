@@ -1,4 +1,4 @@
-from atlas import db, sync
+from atlas import sync
 from tests.conftest import add_repo
 
 
@@ -15,31 +15,59 @@ def gh_repo(full_name: str, pushed_at: str = "2026-07-01T00:00:00Z", **overrides
     }
 
 
-def test_project_task_flow(client):
+def column(project: dict, name: str) -> dict:
+    return next(c for c in project["columns"] if c["name"] == name)
+
+
+def test_project_kanban_flow(client):
     p = client.post("/api/projects", json={"name": "atlas"}).json()
-    assert p["status"] == "idea"
+    assert [c["name"] for c in p["columns"]] == ["Todo", "Doing", "Done"]
 
-    moved = client.patch(f"/api/projects/{p['id']}/move", json={"status": "active", "index": 0})
-    assert moved.json()["status"] == "active"
+    client.patch(f"/api/projects/{p['id']}/status", json={"status": "active"})
 
-    t = client.post(f"/api/projects/{p['id']}/tasks", json={"title": "build it"}).json()
-    assert t["status"] == "todo"
-    client.patch(f"/api/tasks/{t['id']}/move", json={"status": "doing", "index": 0})
+    todo, done = column(p, "Todo"), column(p, "Done")
+    t = client.post(f"/api/columns/{todo['id']}/tasks", json={"title": "build it"}).json()
+    client.patch(f"/api/tasks/{t['id']}/move", json={"column_id": done["id"], "index": 0})
 
-    client.patch(f"/api/projects/{p['id']}", json={"notes": "remember the husk rule"})
+    review = client.post(f"/api/projects/{p['id']}/columns", json={"name": "Review"}).json()
+    client.patch(f"/api/columns/{review['id']}/move", json={"index": 1})
+    client.patch(f"/api/columns/{review['id']}", json={"name": "In review"})
 
     full = client.get(f"/api/projects/{p['id']}").json()
-    assert full["notes"] == "remember the husk rule"
-    assert full["tasks"][0]["status"] == "doing"
+    assert full["status"] == "active"
+    assert [c["name"] for c in full["columns"]] == ["Todo", "In review", "Doing", "Done"]
+    assert column(full, "Done")["tasks"][0]["title"] == "build it"
 
     board = client.get("/api/board").json()
     active = [x for x in board["projects"] if x["status"] == "active"]
-    assert active[0]["task_counts"] == {"total": 1, "done": 0}
+    assert active[0]["task_counts"] == {"total": 1, "done": 1}
+
+
+def test_column_delete_guards_api(client):
+    p = client.post("/api/projects", json={"name": "p"}).json()
+    todo = column(p, "Todo")
+    client.post(f"/api/columns/{todo['id']}/tasks", json={"title": "t"})
+    r = client.delete(f"/api/columns/{todo['id']}")
+    assert r.status_code == 400
+    assert "still has tasks" in r.json()["detail"]
+
+
+def test_cross_project_move_rejected_api(client):
+    p1 = client.post("/api/projects", json={"name": "p1"}).json()
+    p2 = client.post("/api/projects", json={"name": "p2"}).json()
+    t = client.post(
+        f"/api/columns/{column(p1, 'Todo')['id']}/tasks", json={"title": "t"}
+    ).json()
+    r = client.patch(
+        f"/api/tasks/{t['id']}/move",
+        json={"column_id": column(p2, "Todo")["id"], "index": 0},
+    )
+    assert r.status_code == 400
 
 
 def test_invalid_status_rejected(client):
     p = client.post("/api/projects", json={"name": "x"}).json()
-    r = client.patch(f"/api/projects/{p['id']}/move", json={"status": "bogus", "index": 0})
+    r = client.patch(f"/api/projects/{p['id']}/status", json={"status": "bogus"})
     assert r.status_code == 422
     assert "invalid status" in r.json()["detail"]
 
@@ -59,16 +87,18 @@ def test_sync_creates_projects_in_idea(client, monkeypatch):
 
     board = client.get("/api/board").json()
     idea = [p for p in board["projects"] if p["status"] == "idea"]
-    # archived repo gets no card; recent repo sorts first
     assert [p["name"] for p in idea] == ["new", "old"]
-    assert board["last_synced_at"] is not None
+
+    # auto-created cards have a working kanban
+    p = client.get(f"/api/projects/{idea[0]['id']}").json()
+    assert [c["name"] for c in p["columns"]] == ["Todo", "Doing", "Done"]
 
 
 def test_sync_never_clobbers_user_state(client, monkeypatch):
     monkeypatch.setattr(sync, "fetch_repos", lambda: [gh_repo("fisherrjd/thing")])
     client.post("/api/sync")
     p = client.get("/api/board").json()["projects"][0]
-    client.patch(f"/api/projects/{p['id']}/move", json={"status": "active", "index": 0})
+    client.patch(f"/api/projects/{p['id']}/status", json={"status": "active"})
     client.patch(f"/api/projects/{p['id']}", json={"notes": "mine"})
 
     monkeypatch.setattr(

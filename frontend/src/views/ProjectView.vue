@@ -2,13 +2,15 @@
 import {
   ArchiveIcon,
   ArrowLeftIcon,
+  CheckCircle2Icon,
   ExternalLinkIcon,
+  GripVerticalIcon,
   PencilIcon,
   PlusIcon,
   Trash2Icon,
   XIcon,
 } from '@lucide/vue'
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import draggable from 'vuedraggable'
@@ -37,18 +39,17 @@ import { Textarea } from '@/components/ui/textarea'
 import { useSync } from '@/composables/useSync'
 import { api, ApiError } from '@/lib/api'
 import { daysSincePush, freshness, relativeDays } from '@/lib/activity'
-import type { Project, Repo, Task, TaskStatus } from '@/types'
-import { STATUS_LABELS, TASK_STATUSES, TASK_STATUS_LABELS } from '@/types'
+import type { Column, Project, ProjectStatus, Repo, Task } from '@/types'
+import { PROJECT_STATUSES, STATUS_LABELS } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
 const projectId = Number(route.params.id)
 
 const project = ref<Project | null>(null)
+const columns = ref<Column[]>([])
 const loading = ref(true)
 const { syncTick } = useSync()
-
-const taskColumns = reactive<Record<TaskStatus, Task[]>>({ todo: [], doing: [], done: [] })
 
 const pushed = computed(() =>
   project.value ? relativeDays(daysSincePush(project.value)) : '',
@@ -65,10 +66,8 @@ async function load() {
   try {
     const p = await api.project(projectId)
     project.value = p
+    columns.value = p.columns ?? []
     notes.value = p.notes
-    for (const status of TASK_STATUSES) {
-      taskColumns[status] = (p.tasks ?? []).filter((t) => t.status === status)
-    }
   } catch (e) {
     toast.error(e instanceof ApiError ? e.message : 'Failed to load project')
     router.push('/')
@@ -80,7 +79,21 @@ async function load() {
 onMounted(load)
 watch(syncTick, load)
 
-// ── Edit / delete ─────────────────────────────────────────────────────────────
+// ── Status ───────────────────────────────────────────────────────────────────
+
+async function setStatus(status: ProjectStatus) {
+  if (!project.value) return
+  const previous = project.value.status
+  project.value.status = status
+  try {
+    await api.setProjectStatus(projectId, status)
+  } catch (e) {
+    project.value.status = previous
+    toast.error(e instanceof ApiError ? e.message : 'Status change failed')
+  }
+}
+
+// ── Edit / delete project ────────────────────────────────────────────────────
 
 const editOpen = ref(false)
 const editName = ref('')
@@ -96,10 +109,12 @@ function openEdit() {
 async function saveEdit() {
   if (!project.value || !editName.value.trim()) return
   try {
-    project.value = await api.updateProject(projectId, {
+    const p = await api.updateProject(projectId, {
       name: editName.value.trim(),
       description: editDescription.value.trim(),
     })
+    project.value = p
+    columns.value = p.columns ?? []
     editOpen.value = false
   } catch (e) {
     toast.error(e instanceof ApiError ? e.message : 'Save failed')
@@ -133,7 +148,8 @@ watch(addRepoOpen, async (open) => {
 async function addRepo() {
   if (!repoToAdd.value) return
   try {
-    project.value = await api.assignRepo(projectId, repoToAdd.value)
+    const p = await api.assignRepo(projectId, repoToAdd.value)
+    project.value = p
     addRepoOpen.value = false
   } catch (e) {
     toast.error(e instanceof ApiError ? e.message : 'Failed to add repo')
@@ -149,17 +165,97 @@ async function removeRepo(fullName: string) {
   }
 }
 
+// ── Columns ──────────────────────────────────────────────────────────────────
+
+interface ColumnChangeEvent {
+  moved?: { element: Column; newIndex: number }
+}
+
+async function onColumnReorder(event: ColumnChangeEvent) {
+  if (!event.moved) return
+  try {
+    await api.moveColumn(event.moved.element.id, event.moved.newIndex)
+  } catch (e) {
+    toast.error(e instanceof ApiError ? e.message : 'Reorder failed')
+    await load()
+  }
+}
+
+const addingColumn = ref(false)
+const newColumnName = ref('')
+
+async function addColumn() {
+  const name = newColumnName.value.trim()
+  if (!name) return
+  try {
+    const col = await api.addColumn(projectId, name)
+    columns.value.push({ ...col, tasks: [] })
+    newColumnName.value = ''
+    addingColumn.value = false
+  } catch (e) {
+    toast.error(e instanceof ApiError ? e.message : 'Failed to add column')
+  }
+}
+
+const renamingId = ref<number | null>(null)
+const renameValue = ref('')
+
+function startRename(col: Column) {
+  renamingId.value = col.id
+  renameValue.value = col.name
+  nextTick(() => {
+    const el = document.getElementById(`rename-${col.id}`)
+    el?.focus()
+  })
+}
+
+async function saveRename(col: Column) {
+  const name = renameValue.value.trim()
+  renamingId.value = null
+  if (!name || name === col.name) return
+  const previous = col.name
+  col.name = name
+  try {
+    await api.renameColumn(col.id, name)
+  } catch (e) {
+    col.name = previous
+    toast.error(e instanceof ApiError ? e.message : 'Rename failed')
+  }
+}
+
+async function removeColumn(col: Column) {
+  try {
+    await api.deleteColumn(col.id)
+    columns.value = columns.value.filter((c) => c.id !== col.id)
+  } catch (e) {
+    toast.error(e instanceof ApiError ? e.message : 'Delete failed')
+  }
+}
+
 // ── Tasks ────────────────────────────────────────────────────────────────────
 
-const newTask = ref('')
+const addingTaskFor = ref<number | null>(null)
+const newTaskTitle = ref('')
 
-async function addTask() {
-  const title = newTask.value.trim()
-  if (!title) return
+function startAddTask(col: Column) {
+  addingTaskFor.value = col.id
+  newTaskTitle.value = ''
+  nextTick(() => {
+    const el = document.getElementById(`add-task-${col.id}`)
+    el?.focus()
+  })
+}
+
+async function addTask(col: Column) {
+  const title = newTaskTitle.value.trim()
+  if (!title) {
+    addingTaskFor.value = null
+    return
+  }
   try {
-    const t = await api.addTask(projectId, title)
-    taskColumns.todo.push(t)
-    newTask.value = ''
+    const t = await api.addTask(col.id, title)
+    col.tasks.push(t)
+    newTaskTitle.value = ''
   } catch (e) {
     toast.error(e instanceof ApiError ? e.message : 'Failed to add task')
   }
@@ -170,21 +266,21 @@ interface TaskChangeEvent {
   moved?: { element: Task; newIndex: number }
 }
 
-async function onTaskChange(status: TaskStatus, event: TaskChangeEvent) {
+async function onTaskChange(col: Column, event: TaskChangeEvent) {
   const change = event.added ?? event.moved
   if (!change) return
   try {
-    await api.moveTask(change.element.id, status, change.newIndex)
+    await api.moveTask(change.element.id, col.id, change.newIndex)
   } catch (e) {
     toast.error(e instanceof ApiError ? e.message : 'Move failed')
     await load()
   }
 }
 
-async function removeTask(status: TaskStatus, task: Task) {
+async function removeTask(col: Column, task: Task) {
   try {
     await api.deleteTask(task.id)
-    taskColumns[status] = taskColumns[status].filter((t) => t.id !== task.id)
+    col.tasks = col.tasks.filter((t) => t.id !== task.id)
   } catch (e) {
     toast.error(e instanceof ApiError ? e.message : 'Delete failed')
   }
@@ -202,7 +298,8 @@ watch(notes, (value) => {
   clearTimeout(noteTimer)
   noteTimer = setTimeout(async () => {
     try {
-      project.value = await api.updateProject(projectId, { notes: value })
+      const p = await api.updateProject(projectId, { notes: value })
+      if (project.value) project.value.notes = p.notes
       noteState.value = 'saved'
     } catch {
       noteState.value = 'error'
@@ -214,14 +311,14 @@ watch(notes, (value) => {
 <template>
   <div v-if="loading" class="space-y-4">
     <Skeleton class="h-10 w-64" />
-    <Skeleton class="h-40 w-full" />
+    <Skeleton class="h-64 w-full" />
   </div>
 
   <div v-else-if="project" class="space-y-6">
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div class="space-y-1">
         <div class="flex items-center gap-3">
-          <Button variant="ghost" size="icon-sm" aria-label="Back to board" @click="router.push('/')">
+          <Button variant="ghost" size="icon-sm" aria-label="Back to projects" @click="router.push('/')">
             <ArrowLeftIcon />
           </Button>
           <h1 class="text-2xl font-bold tracking-tight">{{ project.name }}</h1>
@@ -231,7 +328,16 @@ watch(notes, (value) => {
             :class="DOT_CLASS[dot]"
             :title="`${dot} — ${pushed}`"
           />
-          <Badge variant="secondary">{{ STATUS_LABELS[project.status] }}</Badge>
+          <Select :model-value="project.status" @update:model-value="setStatus($event as ProjectStatus)">
+            <SelectTrigger class="h-7 w-28 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="s in PROJECT_STATUSES" :key="s" :value="s">
+                {{ STATUS_LABELS[s] }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <p v-if="project.description" class="pl-11 text-sm text-muted-foreground">
           {{ project.description }}
@@ -284,50 +390,125 @@ watch(notes, (value) => {
 
     <Separator />
 
-    <!-- Task kanban -->
-    <div class="space-y-3">
-      <div class="flex items-center gap-3">
-        <h2 class="text-lg font-semibold tracking-tight">Tasks</h2>
-        <form class="flex flex-1 items-center gap-2" @submit.prevent="addTask">
-          <Input v-model="newTask" placeholder="Add a task…" class="h-8 max-w-sm text-sm" />
-          <Button type="submit" size="sm" variant="outline" :disabled="!newTask.trim()">Add</Button>
-        </form>
-      </div>
-      <div class="grid gap-3 sm:grid-cols-3">
-        <div
-          v-for="status in TASK_STATUSES"
-          :key="status"
-          class="rounded-lg border bg-muted/40"
-        >
-          <div class="flex items-center gap-2 px-3 py-2">
-            <h3 class="text-sm font-medium">{{ TASK_STATUS_LABELS[status] }}</h3>
-            <Badge variant="secondary" class="text-[10px]">{{ taskColumns[status].length }}</Badge>
-          </div>
-          <draggable
-            :list="taskColumns[status]"
-            group="tasks"
-            item-key="id"
-            class="flex min-h-16 flex-col gap-1.5 p-2 pt-0"
-            ghost-class="opacity-40"
-            @change="(e: TaskChangeEvent) => onTaskChange(status, e)"
-          >
-            <template #item="{ element }">
-              <div
-                class="group flex cursor-grab items-center gap-2 rounded-md border bg-card px-2.5 py-1.5 text-sm"
-                :class="status === 'done' ? 'text-muted-foreground line-through' : ''"
-              >
-                <span class="flex-1">{{ element.title }}</span>
-                <button
-                  class="text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
-                  :aria-label="`Delete ${element.title}`"
-                  @click="removeTask(status, element)"
+    <!-- Kanban -->
+    <div class="flex items-start gap-3 overflow-x-auto pb-4">
+      <draggable
+        :list="columns"
+        item-key="id"
+        handle=".col-drag"
+        class="flex items-start gap-3"
+        ghost-class="opacity-40"
+        @change="onColumnReorder"
+      >
+        <template #item="{ element: col }">
+          <div class="flex w-64 shrink-0 flex-col rounded-lg border bg-muted/40">
+            <div class="group/col flex items-center gap-1.5 px-2 py-2">
+              <GripVerticalIcon class="col-drag size-3.5 shrink-0 cursor-grab text-muted-foreground" />
+              <Input
+                v-if="renamingId === col.id"
+                :id="`rename-${col.id}`"
+                v-model="renameValue"
+                class="h-6 text-sm"
+                @keyup.enter="saveRename(col)"
+                @keyup.esc="renamingId = null"
+                @blur="saveRename(col)"
+              />
+              <template v-else>
+                <h3 class="text-sm font-semibold">{{ col.name }}</h3>
+                <CheckCircle2Icon
+                  v-if="col.is_done"
+                  class="size-3 text-muted-foreground"
+                  title="tasks here count as done"
+                />
+                <Badge variant="secondary" class="text-[10px]">{{ col.tasks.length }}</Badge>
+                <span class="ml-auto flex items-center gap-1 opacity-0 transition-opacity group-hover/col:opacity-100">
+                  <button
+                    class="text-muted-foreground hover:text-foreground"
+                    :aria-label="`Rename ${col.name}`"
+                    @click="startRename(col)"
+                  >
+                    <PencilIcon class="size-3" />
+                  </button>
+                  <button
+                    class="text-muted-foreground hover:text-destructive"
+                    :aria-label="`Delete ${col.name}`"
+                    @click="removeColumn(col)"
+                  >
+                    <XIcon class="size-3.5" />
+                  </button>
+                </span>
+              </template>
+            </div>
+            <draggable
+              :list="col.tasks"
+              group="tasks"
+              item-key="id"
+              class="flex min-h-10 flex-col gap-1.5 p-2 pt-0"
+              ghost-class="opacity-40"
+              @change="(e: TaskChangeEvent) => onTaskChange(col, e)"
+            >
+              <template #item="{ element: task }">
+                <div
+                  class="group flex cursor-grab items-center gap-2 rounded-md border bg-card px-2.5 py-1.5 text-sm"
+                  :class="col.is_done ? 'text-muted-foreground line-through' : ''"
                 >
-                  <XIcon class="size-3.5" />
-                </button>
-              </div>
-            </template>
-          </draggable>
-        </div>
+                  <span class="flex-1">{{ task.title }}</span>
+                  <button
+                    class="text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                    :aria-label="`Delete ${task.title}`"
+                    @click="removeTask(col, task)"
+                  >
+                    <XIcon class="size-3.5" />
+                  </button>
+                </div>
+              </template>
+            </draggable>
+            <div class="p-2 pt-0">
+              <Input
+                v-if="addingTaskFor === col.id"
+                :id="`add-task-${col.id}`"
+                v-model="newTaskTitle"
+                placeholder="Task title…"
+                class="h-7 text-sm"
+                @keyup.enter="addTask(col)"
+                @keyup.esc="addingTaskFor = null"
+                @blur="addTask(col)"
+              />
+              <Button
+                v-else
+                variant="ghost"
+                size="xs"
+                class="w-full justify-start text-muted-foreground"
+                @click="startAddTask(col)"
+              >
+                <PlusIcon />
+                Add task
+              </Button>
+            </div>
+          </div>
+        </template>
+      </draggable>
+
+      <div class="w-56 shrink-0">
+        <Input
+          v-if="addingColumn"
+          id="add-column"
+          v-model="newColumnName"
+          placeholder="Column name…"
+          class="h-8 text-sm"
+          @keyup.enter="addColumn"
+          @keyup.esc="addingColumn = false"
+        />
+        <Button
+          v-else
+          variant="outline"
+          size="sm"
+          class="w-full justify-start text-muted-foreground"
+          @click="addingColumn = true; newColumnName = ''"
+        >
+          <PlusIcon />
+          Add column
+        </Button>
       </div>
     </div>
 
@@ -377,7 +558,7 @@ watch(notes, (value) => {
         <DialogHeader>
           <DialogTitle>Delete {{ project.name }}?</DialogTitle>
           <DialogDescription>
-            Tasks and notes are deleted; linked repos return to the unassigned pool.
+            Columns, tasks, and notes are deleted; linked repos return to the unassigned pool.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

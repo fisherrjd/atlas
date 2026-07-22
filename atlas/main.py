@@ -21,10 +21,6 @@ if (DIST / "assets").exists():
 
 # ── Request models ────────────────────────────────────────────────────────────
 
-ProjectStatus = str
-TaskStatus = str
-
-
 class CreateProjectReq(BaseModel):
     name: str = Field(min_length=1)
     description: str = ""
@@ -38,13 +34,20 @@ class UpdateProjectReq(BaseModel):
     notes: str | None = None
 
 
-class MoveReq(BaseModel):
+class StatusReq(BaseModel):
     status: str
-    index: int = Field(ge=0)
 
 
 class AssignRepoReq(BaseModel):
     full_name: str
+
+
+class NameReq(BaseModel):
+    name: str = Field(min_length=1)
+
+
+class MoveColumnReq(BaseModel):
+    index: int = Field(ge=0)
 
 
 class CreateTaskReq(BaseModel):
@@ -55,9 +58,16 @@ class UpdateTaskReq(BaseModel):
     title: str = Field(min_length=1)
 
 
-def _check_status(status: str, allowed: tuple[str, ...]) -> None:
-    if status not in allowed:
-        raise HTTPException(422, detail=f"invalid status {status!r}; allowed: {', '.join(allowed)}")
+class MoveTaskReq(BaseModel):
+    column_id: int
+    index: int = Field(ge=0)
+
+
+def _check_status(status: str) -> None:
+    if status not in db.PROJECT_STATUSES:
+        raise HTTPException(
+            422, detail=f"invalid status {status!r}; allowed: {', '.join(db.PROJECT_STATUSES)}"
+        )
 
 
 # ── Health / board ────────────────────────────────────────────────────────────
@@ -76,7 +86,7 @@ async def get_board() -> dict:
 
 @app.post("/api/projects", status_code=201)
 async def create_project(req: CreateProjectReq) -> dict:
-    _check_status(req.status, db.PROJECT_STATUSES)
+    _check_status(req.status)
     try:
         return db.create_project(req.name, req.description, req.status, req.repos)
     except KeyError as e:
@@ -100,19 +110,54 @@ async def update_project(project_id: int, req: UpdateProjectReq) -> dict:
     return project
 
 
-@app.patch("/api/projects/{project_id}/move")
-async def move_project(project_id: int, req: MoveReq) -> dict:
-    _check_status(req.status, db.PROJECT_STATUSES)
-    moved = db.move("projects", project_id, req.status, req.index)
-    if moved is None:
+@app.patch("/api/projects/{project_id}/status")
+async def set_project_status(project_id: int, req: StatusReq) -> dict:
+    _check_status(req.status)
+    project = db.set_project_status(project_id, req.status)
+    if project is None:
         raise HTTPException(404, detail="project not found")
-    return moved
+    return project
 
 
 @app.delete("/api/projects/{project_id}")
 async def delete_project(project_id: int) -> dict:
     if not db.delete_project(project_id):
         raise HTTPException(404, detail="project not found")
+    return {"detail": "deleted"}
+
+
+# ── Columns ──────────────────────────────────────────────────────────────────
+
+@app.post("/api/projects/{project_id}/columns", status_code=201)
+async def create_column(project_id: int, req: NameReq) -> dict:
+    if db.get_project(project_id) is None:
+        raise HTTPException(404, detail="project not found")
+    return db.create_column(project_id, req.name)
+
+
+@app.patch("/api/columns/{column_id}")
+async def rename_column(column_id: int, req: NameReq) -> dict:
+    column = db.rename_column(column_id, req.name)
+    if column is None:
+        raise HTTPException(404, detail="column not found")
+    return column
+
+
+@app.patch("/api/columns/{column_id}/move")
+async def move_column(column_id: int, req: MoveColumnReq) -> dict:
+    column = db.move_column(column_id, req.index)
+    if column is None:
+        raise HTTPException(404, detail="column not found")
+    return column
+
+
+@app.delete("/api/columns/{column_id}")
+async def delete_column(column_id: int) -> dict:
+    try:
+        if not db.delete_column(column_id):
+            raise HTTPException(404, detail="column not found")
+    except db.ColumnNotDeletable as e:
+        raise HTTPException(400, detail=e.detail)
     return {"detail": "deleted"}
 
 
@@ -143,11 +188,12 @@ async def unassign_repo(project_id: int, full_name: str) -> dict:
 
 # ── Tasks ────────────────────────────────────────────────────────────────────
 
-@app.post("/api/projects/{project_id}/tasks", status_code=201)
-async def create_task(project_id: int, req: CreateTaskReq) -> dict:
-    if db.get_project(project_id) is None:
-        raise HTTPException(404, detail="project not found")
-    return db.create_task(project_id, req.title)
+@app.post("/api/columns/{column_id}/tasks", status_code=201)
+async def create_task(column_id: int, req: CreateTaskReq) -> dict:
+    task = db.create_task(column_id, req.title)
+    if task is None:
+        raise HTTPException(404, detail="column not found")
+    return task
 
 
 @app.patch("/api/tasks/{task_id}")
@@ -159,11 +205,13 @@ async def update_task(task_id: int, req: UpdateTaskReq) -> dict:
 
 
 @app.patch("/api/tasks/{task_id}/move")
-async def move_task(task_id: int, req: MoveReq) -> dict:
-    _check_status(req.status, db.TASK_STATUSES)
-    moved = db.move("tasks", task_id, req.status, req.index)
+async def move_task(task_id: int, req: MoveTaskReq) -> dict:
+    try:
+        moved = db.move_task(task_id, req.column_id, req.index)
+    except db.CrossProjectMove:
+        raise HTTPException(400, detail="cannot move a task to another project's column")
     if moved is None:
-        raise HTTPException(404, detail="task not found")
+        raise HTTPException(404, detail="task or column not found")
     return moved
 
 

@@ -1,10 +1,10 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import BoardView from './views/BoardView.vue'
+import ProjectsView from './views/ProjectsView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/', name: 'board', component: BoardView },
+    { path: '/', name: 'projects', component: ProjectsView },
     {
       path: '/p/:id',
       name: 'project',

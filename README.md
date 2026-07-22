@@ -30,12 +30,19 @@ Other scripts: `api` / `web` (each side alone), `build` (SPA → `frontend/dist`
 
 ## How it works
 
-- **Board** (`/`): five columns — Idea, Backlog, Active, Paused, Done. Cards
-  are *projects*; drag to move/reorder. A project groups **one or more GitHub
-  repos** (e.g. `osrs-ge` holds the five `ge-*` repos) or none at all (pure
-  ideas).
-- **Project page** (`/p/:id`): repo chips linking to GitHub, a Todo/Doing/Done
-  task kanban, and freeform notes with autosave.
+The hierarchy: **projects** (grid on the main page) → each project's **own
+kanban** (custom columns) → **tasks**.
+
+- **Projects** (`/`): a searchable grid of every project, filterable by status
+  (Idea / Backlog / Active / Paused / Done — change it from the badge on each
+  card). A project groups **one or more GitHub repos** (e.g. `osrs-ge` holds
+  the five `ge-*` repos) or none at all (pure ideas). Sorted by most recent
+  push.
+- **Project page** (`/p/:id`): repo chips linking to GitHub, freeform notes
+  with autosave, and the project's own kanban — starts as Todo / Doing / Done,
+  but columns can be added, renamed, reordered (drag the grip), and deleted
+  (only when empty; a column flagged ✓ counts its tasks as "done" for the
+  card's progress badge).
 - **Sync** (header button, or `POST /api/sync`): runs `gh repo list` for
   `fisherrjd` + `OldSchool-Market-Research` (needs an authed `gh` on the
   server's PATH) and upserts repo metadata. **Sync never touches your kanban:**

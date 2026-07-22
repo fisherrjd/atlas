@@ -101,17 +101,10 @@ def apply(fetched: list[dict]) -> dict:
             "SELECT * FROM repos WHERE project_id IS NULL AND archived = 0"
             " ORDER BY pushed_at DESC"
         ).fetchall():
-            cur = db.conn.execute(
-                "INSERT INTO projects (name, description, status, sort_order) VALUES (?, ?, 'idea', ?)",
-                (
-                    repo["name"],
-                    repo["description"],
-                    db._next_sort_order("projects", "idea"),
-                ),
-            )
+            project_id = db._insert_project_tx(repo["name"], repo["description"], "idea")
             db.conn.execute(
                 "UPDATE repos SET project_id = ? WHERE full_name = ?",
-                (cur.lastrowid, repo["full_name"]),
+                (project_id, repo["full_name"]),
             )
 
     db.set_meta("last_synced_at", now)

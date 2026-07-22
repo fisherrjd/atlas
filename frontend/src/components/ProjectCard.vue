@@ -3,10 +3,22 @@ import { TrendingUpIcon, TriangleAlertIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { daysSincePush, freshness, mismatch, relativeDays } from '@/lib/activity'
-import type { Project } from '@/types'
+import type { Project, ProjectStatus } from '@/types'
+import { PROJECT_STATUSES, STATUS_LABELS } from '@/types'
 
 const props = defineProps<{ project: Project }>()
+
+const emit = defineEmits<{
+  setStatus: [status: ProjectStatus]
+}>()
 
 const dot = computed(() => freshness(props.project))
 const hint = computed(() => mismatch(props.project))
@@ -37,14 +49,33 @@ const DOT_CLASS = {
       <span class="truncate text-sm font-medium">{{ project.name }}</span>
       <TriangleAlertIcon
         v-if="hint === 'stale'"
-        class="ml-auto size-3.5 shrink-0 text-amber-600"
+        class="size-3.5 shrink-0 text-amber-600"
         title="In Active, but no pushes in 90+ days"
       />
       <TrendingUpIcon
         v-else-if="hint === 'moving'"
-        class="ml-auto size-3.5 shrink-0 text-emerald-600"
-        title="Parked here, but pushed within 30 days"
+        class="size-3.5 shrink-0 text-emerald-600"
+        title="Parked, but pushed within 30 days"
       />
+      <DropdownMenu>
+        <DropdownMenuTrigger as-child>
+          <button class="ml-auto shrink-0" aria-label="Change status" @click.stop>
+            <Badge variant="outline" class="text-[10px] hover:bg-accent">
+              {{ STATUS_LABELS[project.status] }}
+            </Badge>
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuRadioGroup
+            :model-value="project.status"
+            @update:model-value="emit('setStatus', $event as ProjectStatus)"
+          >
+            <DropdownMenuRadioItem v-for="s in PROJECT_STATUSES" :key="s" :value="s">
+              {{ STATUS_LABELS[s] }}
+            </DropdownMenuRadioItem>
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
     <p v-if="project.description" class="line-clamp-2 text-xs text-muted-foreground">
       {{ project.description }}

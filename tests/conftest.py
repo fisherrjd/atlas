@@ -32,6 +32,7 @@ assert str(db.DB_PATH) == os.environ["ATLAS_DB"], db.DB_PATH
 def fresh_db():
     with db.conn:
         db.conn.execute("DELETE FROM tasks")
+        db.conn.execute("DELETE FROM columns")
         db.conn.execute("DELETE FROM repos")
         db.conn.execute("DELETE FROM projects")
         db.conn.execute("DELETE FROM meta")

@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { PlusIcon } from '@lucide/vue'
-import { onMounted, reactive, ref, watch } from 'vue'
+import { PlusIcon, SearchIcon } from '@lucide/vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
-import type { ColumnChangeEvent } from '@/components/BoardColumn.vue'
-import BoardColumn from '@/components/BoardColumn.vue'
+import ProjectCard from '@/components/ProjectCard.vue'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -27,18 +27,16 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { useSync } from '@/composables/useSync'
 import { api, ApiError } from '@/lib/api'
+import { lastPush } from '@/lib/activity'
 import type { Project, ProjectStatus, Repo } from '@/types'
 import { PROJECT_STATUSES, STATUS_LABELS } from '@/types'
 
+const router = useRouter()
 const loading = ref(true)
 const lastSyncedAt = ref<string | null>(null)
-const columns = reactive<Record<ProjectStatus, Project[]>>({
-  idea: [],
-  backlog: [],
-  active: [],
-  paused: [],
-  done: [],
-})
+const projects = ref<Project[]>([])
+const search = ref('')
+const filter = ref<'all' | ProjectStatus>('all')
 
 const { syncTick } = useSync()
 
@@ -46,11 +44,9 @@ async function load() {
   try {
     const data = await api.board()
     lastSyncedAt.value = data.last_synced_at
-    for (const status of PROJECT_STATUSES) {
-      columns[status] = data.projects.filter((p) => p.status === status)
-    }
+    projects.value = data.projects
   } catch (e) {
-    toast.error(e instanceof ApiError ? e.message : 'Failed to load board')
+    toast.error(e instanceof ApiError ? e.message : 'Failed to load projects')
   } finally {
     loading.value = false
   }
@@ -59,15 +55,41 @@ async function load() {
 onMounted(load)
 watch(syncTick, load)
 
-async function onColumnChange(status: ProjectStatus, event: ColumnChangeEvent) {
-  // vuedraggable already applied the optimistic move to the arrays
-  const change = event.added ?? event.moved
-  if (!change) return
+const counts = computed(() => {
+  const c: Record<string, number> = { all: projects.value.length }
+  for (const s of PROJECT_STATUSES) {
+    c[s] = projects.value.filter((p) => p.status === s).length
+  }
+  return c
+})
+
+const visible = computed(() => {
+  const q = search.value.trim().toLowerCase()
+  return projects.value
+    .filter((p) => filter.value === 'all' || p.status === filter.value)
+    .filter(
+      (p) =>
+        q === '' ||
+        p.name.toLowerCase().includes(q) ||
+        p.description.toLowerCase().includes(q) ||
+        p.repos.some((r) => r.full_name.toLowerCase().includes(q)),
+    )
+    .sort((a, b) => {
+      const pa = lastPush(a)
+      const pb = lastPush(b)
+      if (pa !== pb) return (pb ?? '').localeCompare(pa ?? '')
+      return a.name.localeCompare(b.name)
+    })
+})
+
+async function setStatus(project: Project, status: ProjectStatus) {
+  const previous = project.status
+  project.status = status // optimistic
   try {
-    await api.moveProject(change.element.id, status, change.newIndex)
+    await api.setProjectStatus(project.id, status)
   } catch (e) {
-    toast.error(e instanceof ApiError ? e.message : 'Move failed')
-    await load()
+    project.status = previous
+    toast.error(e instanceof ApiError ? e.message : 'Status change failed')
   }
 }
 
@@ -99,15 +121,15 @@ function toggleRepo(fullName: string, checked: boolean) {
 async function createProject() {
   if (!newName.value.trim()) return
   try {
-    await api.createProject({
+    const created = await api.createProject({
       name: newName.value.trim(),
       description: newDescription.value.trim(),
       status: newStatus.value,
       repos: [...pickedRepos.value],
     })
     dialogOpen.value = false
-    toast.success(`Created ${newName.value.trim()}`)
-    await load()
+    toast.success(`Created ${created.name}`)
+    router.push(`/p/${created.id}`)
   } catch (e) {
     toast.error(e instanceof ApiError ? e.message : 'Create failed')
   }
@@ -118,7 +140,7 @@ async function createProject() {
   <div class="space-y-4">
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
-        <h1 class="text-2xl font-bold tracking-tight">Board</h1>
+        <h1 class="text-2xl font-bold tracking-tight">Projects</h1>
         <p v-if="lastSyncedAt" class="text-xs text-muted-foreground">
           last synced {{ new Date(lastSyncedAt).toLocaleString() }}
         </p>
@@ -147,7 +169,7 @@ async function createProject() {
               <Input id="np-desc" v-model="newDescription" placeholder="optional" />
             </div>
             <div class="space-y-2">
-              <Label>Column</Label>
+              <Label>Status</Label>
               <Select v-model="newStatus">
                 <SelectTrigger class="w-full">
                   <SelectValue />
@@ -183,17 +205,38 @@ async function createProject() {
       </Dialog>
     </div>
 
-    <div v-if="loading" class="flex gap-4">
-      <Skeleton v-for="i in 5" :key="i" class="h-72 w-64 shrink-0" />
+    <div class="flex flex-wrap items-center gap-2">
+      <div class="relative">
+        <SearchIcon class="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Input v-model="search" placeholder="Search projects…" class="h-8 w-56 pl-8 text-sm" />
+      </div>
+      <div class="flex items-center gap-1">
+        <Button
+          v-for="s in ['all', ...PROJECT_STATUSES] as const"
+          :key="s"
+          :variant="filter === s ? 'secondary' : 'ghost'"
+          size="xs"
+          @click="filter = s"
+        >
+          {{ s === 'all' ? 'All' : STATUS_LABELS[s] }}
+          <span class="text-muted-foreground">{{ counts[s] }}</span>
+        </Button>
+      </div>
     </div>
-    <div v-else class="flex items-start gap-4 overflow-x-auto pb-4">
-      <BoardColumn
-        v-for="status in PROJECT_STATUSES"
-        :key="status"
-        :status="status"
-        :label="STATUS_LABELS[status]"
-        :projects="columns[status]"
-        @change="onColumnChange"
+
+    <div v-if="loading" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <Skeleton v-for="i in 8" :key="i" class="h-28" />
+    </div>
+    <div v-else-if="visible.length === 0" class="py-16 text-center text-sm text-muted-foreground">
+      No projects match. Try a sync, or clear the search.
+    </div>
+    <div v-else class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <ProjectCard
+        v-for="p in visible"
+        :key="p.id"
+        :project="p"
+        @click="router.push(`/p/${p.id}`)"
+        @set-status="(s) => setStatus(p, s)"
       />
     </div>
   </div>

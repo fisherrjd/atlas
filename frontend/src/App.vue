@@ -21,7 +21,7 @@ const { syncing, runSync } = useSync()
             class="transition-colors hover:text-foreground"
             active-class="text-foreground"
           >
-            Board
+            Projects
           </RouterLink>
           <RouterLink
             to="/styleguide"

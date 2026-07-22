@@ -19,9 +19,12 @@ registered last) — no CORS anywhere, keep it that way.
   (see `tests/conftest.py`). One module-level connection; all routes are
   async on one event loop, so access is serialized. Writes go through
   `with conn:` transactions.
+- **Hierarchy:** projects → columns (each project's own kanban; default
+  Todo/Doing/Done, `is_done` flag drives the done-count) → tasks. Column
+  deletion is guarded (never the last column, never one with tasks).
 - **The sync invariant:** `sync.apply()` upserts `repos` metadata columns
-  only — it never writes `repos.project_id` and never touches `projects` or
-  `tasks`. Kanban status, ordering, grouping, notes, tasks are user state.
+  only — it never writes `repos.project_id` and never touches `projects`,
+  `columns`, or `tasks`. Kanban state, grouping, notes, tasks are user state.
   Any future sync feature must preserve this.
 - **Husk rule** (`db._maybe_delete_husk`): when a repo is reassigned away,
   its old project is deleted only if it has no repos, no tasks, empty notes,

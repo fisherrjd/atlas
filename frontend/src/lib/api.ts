@@ -1,11 +1,11 @@
 import type {
   BoardData,
+  Column,
   Project,
   ProjectStatus,
   Repo,
   SyncResult,
   Task,
-  TaskStatus,
 } from '@/types'
 
 export class ApiError extends Error {
@@ -42,13 +42,25 @@ export const api = {
   project: (id: number) => req<Project>(`/api/projects/${id}`),
   updateProject: (id: number, patch: { name?: string; description?: string; notes?: string }) =>
     req<Project>(`/api/projects/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
-  moveProject: (id: number, status: ProjectStatus, index: number) =>
-    req<Project>(`/api/projects/${id}/move`, {
+  setProjectStatus: (id: number, status: ProjectStatus) =>
+    req<Project>(`/api/projects/${id}/status`, {
       method: 'PATCH',
-      body: JSON.stringify({ status, index }),
+      body: JSON.stringify({ status }),
     }),
   deleteProject: (id: number) =>
     req<{ detail: string }>(`/api/projects/${id}`, { method: 'DELETE' }),
+
+  addColumn: (projectId: number, name: string) =>
+    req<Column>(`/api/projects/${projectId}/columns`, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+  renameColumn: (id: number, name: string) =>
+    req<Column>(`/api/columns/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+  moveColumn: (id: number, index: number) =>
+    req<Column>(`/api/columns/${id}/move`, { method: 'PATCH', body: JSON.stringify({ index }) }),
+  deleteColumn: (id: number) =>
+    req<{ detail: string }>(`/api/columns/${id}`, { method: 'DELETE' }),
 
   repos: (unassigned = false) => req<Repo[]>(`/api/repos${unassigned ? '?unassigned=true' : ''}`),
   assignRepo: (projectId: number, fullName: string) =>
@@ -59,17 +71,17 @@ export const api = {
   unassignRepo: (projectId: number, fullName: string) =>
     req<{ detail: string }>(`/api/projects/${projectId}/repos/${fullName}`, { method: 'DELETE' }),
 
-  addTask: (projectId: number, title: string) =>
-    req<Task>(`/api/projects/${projectId}/tasks`, {
+  addTask: (columnId: number, title: string) =>
+    req<Task>(`/api/columns/${columnId}/tasks`, {
       method: 'POST',
       body: JSON.stringify({ title }),
     }),
   updateTask: (id: number, title: string) =>
     req<Task>(`/api/tasks/${id}`, { method: 'PATCH', body: JSON.stringify({ title }) }),
-  moveTask: (id: number, status: TaskStatus, index: number) =>
+  moveTask: (id: number, columnId: number, index: number) =>
     req<Task>(`/api/tasks/${id}/move`, {
       method: 'PATCH',
-      body: JSON.stringify({ status, index }),
+      body: JSON.stringify({ column_id: columnId, index }),
     }),
   deleteTask: (id: number) => req<{ detail: string }>(`/api/tasks/${id}`, { method: 'DELETE' }),
 
