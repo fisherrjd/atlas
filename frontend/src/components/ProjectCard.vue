@@ -39,7 +39,7 @@ const DOT_CLASS = {
 </script>
 
 <template>
-  <Card class="cursor-pointer gap-2 p-3 transition-colors hover:border-ring/60">
+  <Card class="card-hover gap-2 p-3">
     <div class="flex items-center gap-2">
       <span
         v-if="dot"

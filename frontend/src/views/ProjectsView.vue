@@ -250,7 +250,7 @@ async function createProject() {
           v-for="p in nowProjects"
           :key="p.id"
           :to="`/p/${p.id}`"
-          class="group block rounded-lg border bg-card p-3.5 transition-colors hover:border-ring/60"
+          class="card-hover group block rounded-lg border bg-card p-3.5"
         >
           <span class="text-sm font-medium transition-colors group-hover:text-primary">
             {{ p.name }}
