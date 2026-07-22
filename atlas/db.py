@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS projects (
               CHECK (status IN ('idea','backlog','active','paused','done')),
   sort_order  INTEGER NOT NULL DEFAULT 0,
   notes       TEXT NOT NULL DEFAULT '',
+  archived    INTEGER NOT NULL DEFAULT 0,
   created_at  TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -95,7 +96,13 @@ def _ensure_default_columns_tx(project_id: int) -> None:
 
 
 def _migrate() -> None:
-    """One-time migration from the v0 schema (tasks with project_id + status)."""
+    """One-time migrations. v0: tasks with project_id + status. v1: no archived flag."""
+    project_cols = {r["name"] for r in conn.execute("PRAGMA table_info(projects)")}
+    if "archived" not in project_cols:
+        with conn:
+            conn.execute(
+                "ALTER TABLE projects ADD COLUMN archived INTEGER NOT NULL DEFAULT 0"
+            )
     task_cols = {r["name"] for r in conn.execute("PRAGMA table_info(tasks)")}
     with conn:
         if "status" in task_cols:
@@ -212,9 +219,62 @@ def set_project_status(project_id: int, status: str) -> dict | None:
     return dict(conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone())
 
 
-def board() -> dict:
+def set_archived(project_id: int, archived: bool) -> dict | None:
+    with conn:
+        cur = conn.execute(
+            "UPDATE projects SET archived = ?, updated_at = datetime('now') WHERE id = ?",
+            (1 if archived else 0, project_id),
+        )
+    if cur.rowcount == 0:
+        return None
+    return get_project(project_id)
+
+
+def now_view() -> list[dict]:
+    """Active, unarchived projects with their in-progress (non-done-column) tasks."""
     projects = [
-        dict(r) for r in conn.execute("SELECT * FROM projects ORDER BY status, sort_order")
+        dict(r)
+        for r in conn.execute(
+            "SELECT * FROM projects WHERE status = 'active' AND archived = 0"
+            " ORDER BY sort_order"
+        )
+    ]
+    for p in projects:
+        p["tasks"] = [
+            dict(t)
+            for t in conn.execute(
+                """
+                SELECT t.*, c.name AS column_name FROM tasks t
+                JOIN columns c ON t.column_id = c.id
+                WHERE c.project_id = ? AND c.is_done = 0
+                ORDER BY c.sort_order DESC, t.sort_order
+                """,
+                (p["id"],),
+            )
+        ]
+    return projects
+
+
+def backup(backup_dir: Path, stamp: str, keep: int = 14) -> Path:
+    """Copy the live database to backup_dir/atlas-<stamp>.sqlite; prune old copies."""
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    target = backup_dir / f"atlas-{stamp}.sqlite"
+    dest = sqlite3.connect(target)
+    try:
+        conn.backup(dest)
+    finally:
+        dest.close()
+    old = sorted(backup_dir.glob("atlas-*.sqlite"))[:-keep]
+    for f in old:
+        f.unlink()
+    return target
+
+
+def board(include_archived: bool = False) -> dict:
+    where = "" if include_archived else "WHERE archived = 0"
+    projects = [
+        dict(r)
+        for r in conn.execute(f"SELECT * FROM projects {where} ORDER BY status, sort_order")
     ]
     repos_by_project: dict[int, list[dict]] = {}
     for r in conn.execute(

@@ -1,7 +1,11 @@
 import asyncio
+import logging
 import os
+from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -11,8 +15,41 @@ from . import db, sync
 
 BASE_DIR = Path(os.environ.get("ATLAS_BASE", Path.cwd()))
 DIST = BASE_DIR / "frontend" / "dist"
+BACKUP_DIR = Path(os.environ.get("ATLAS_BACKUP_DIR", db.BASE_DIR / "backups"))
 
-app = FastAPI(title="Atlas")
+log = logging.getLogger("atlas")
+
+scheduler = AsyncIOScheduler()
+
+
+async def _scheduled_sync() -> None:
+    try:
+        fetched = await asyncio.to_thread(sync.fetch_repos)
+        result = sync.apply(fetched)
+        log.info("autosync: %s", result)
+    except sync.SyncError as e:
+        log.warning("autosync failed: %s", e.detail)
+
+
+async def _scheduled_backup() -> None:
+    stamp = datetime.now().strftime("%Y%m%d")
+    target = await asyncio.to_thread(db.backup, BACKUP_DIR, stamp)
+    log.info("backup: %s", target)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    # hourly repo sync + nightly db backup; disable with ATLAS_AUTOSYNC=0
+    if os.environ.get("ATLAS_AUTOSYNC", "1") != "0":
+        scheduler.add_job(_scheduled_sync, "interval", hours=1)
+        scheduler.add_job(_scheduled_backup, "cron", hour=3, minute=15)
+        scheduler.start()
+    yield
+    if scheduler.running:
+        scheduler.shutdown()
+
+
+app = FastAPI(title="Atlas", lifespan=lifespan)
 
 # Serve built frontend assets; absent during dev/tests — skip gracefully.
 if (DIST / "assets").exists():
@@ -78,8 +115,13 @@ async def health() -> dict:
 
 
 @app.get("/api/board")
-async def get_board() -> dict:
-    return db.board()
+async def get_board(include_archived: bool = False) -> dict:
+    return db.board(include_archived=include_archived)
+
+
+@app.get("/api/now")
+async def get_now() -> list[dict]:
+    return db.now_view()
 
 
 # ── Projects ─────────────────────────────────────────────────────────────────
@@ -114,6 +156,18 @@ async def update_project(project_id: int, req: UpdateProjectReq) -> dict:
 async def set_project_status(project_id: int, req: StatusReq) -> dict:
     _check_status(req.status)
     project = db.set_project_status(project_id, req.status)
+    if project is None:
+        raise HTTPException(404, detail="project not found")
+    return project
+
+
+class ArchiveReq(BaseModel):
+    archived: bool
+
+
+@app.patch("/api/projects/{project_id}/archive")
+async def archive_project(project_id: int, req: ArchiveReq) -> dict:
+    project = db.set_archived(project_id, req.archived)
     if project is None:
         raise HTTPException(404, detail="project not found")
     return project

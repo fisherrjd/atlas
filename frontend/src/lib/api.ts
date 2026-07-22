@@ -1,6 +1,7 @@
 import type {
   BoardData,
   Column,
+  NowProject,
   Project,
   ProjectStatus,
   Repo,
@@ -31,7 +32,9 @@ async function req<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  board: () => req<BoardData>('/api/board'),
+  board: (includeArchived = false) =>
+    req<BoardData>(`/api/board${includeArchived ? '?include_archived=true' : ''}`),
+  now: () => req<NowProject[]>('/api/now'),
 
   createProject: (body: {
     name: string
@@ -46,6 +49,11 @@ export const api = {
     req<Project>(`/api/projects/${id}/status`, {
       method: 'PATCH',
       body: JSON.stringify({ status }),
+    }),
+  setArchived: (id: number, archived: boolean) =>
+    req<Project>(`/api/projects/${id}/archive`, {
+      method: 'PATCH',
+      body: JSON.stringify({ archived }),
     }),
   deleteProject: (id: number) =>
     req<{ detail: string }>(`/api/projects/${id}`, { method: 'DELETE' }),

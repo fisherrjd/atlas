@@ -5,6 +5,7 @@ description = "Personal project tracker: kanban + planning for side projects, sy
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "apscheduler>=3.11.2",
     "fastapi>=0.136.3",
     "httpx2>=2.4.0",
     "pytest>=9.0.3",

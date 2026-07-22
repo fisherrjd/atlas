@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { RefreshCwIcon } from '@lucide/vue'
 import { RouterLink, RouterView } from 'vue-router'
-import ThemePicker from '@/components/ThemePicker.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 import { Button } from '@/components/ui/button'
 import { Toaster } from '@/components/ui/sonner'
@@ -36,7 +35,6 @@ const { syncing, runSync } = useSync()
             <RefreshCwIcon :class="syncing ? 'animate-spin' : ''" />
             Sync
           </Button>
-          <ThemePicker />
           <ThemeToggle />
         </div>
       </div>

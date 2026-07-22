@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   ArchiveIcon,
+  ArchiveRestoreIcon,
   ArrowLeftIcon,
   CheckCircle2Icon,
   ExternalLinkIcon,
@@ -118,6 +119,18 @@ async function saveEdit() {
     editOpen.value = false
   } catch (e) {
     toast.error(e instanceof ApiError ? e.message : 'Save failed')
+  }
+}
+
+async function toggleArchived() {
+  if (!project.value) return
+  const next = !project.value.archived
+  try {
+    const p = await api.setArchived(projectId, next)
+    project.value.archived = p.archived
+    toast.success(next ? 'Archived — hidden from the grid' : 'Restored to the grid')
+  } catch (e) {
+    toast.error(e instanceof ApiError ? e.message : 'Archive failed')
   }
 }
 
@@ -344,9 +357,15 @@ watch(notes, (value) => {
         </p>
       </div>
       <div class="flex items-center gap-1">
+        <Badge v-if="project.archived" variant="secondary">archived</Badge>
         <Button variant="ghost" size="sm" @click="openEdit">
           <PencilIcon />
           Edit
+        </Button>
+        <Button variant="ghost" size="sm" @click="toggleArchived">
+          <ArchiveRestoreIcon v-if="project.archived" />
+          <ArchiveIcon v-else />
+          {{ project.archived ? 'Restore' : 'Archive' }}
         </Button>
         <Button variant="ghost" size="sm" class="text-destructive" @click="deleteOpen = true">
           <Trash2Icon />

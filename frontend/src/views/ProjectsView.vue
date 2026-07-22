@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { PlusIcon, SearchIcon } from '@lucide/vue'
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import ProjectCard from '@/components/ProjectCard.vue'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -28,23 +29,25 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useSync } from '@/composables/useSync'
 import { api, ApiError } from '@/lib/api'
 import { lastPush } from '@/lib/activity'
-import type { Project, ProjectStatus, Repo } from '@/types'
+import type { NowProject, Project, ProjectStatus, Repo } from '@/types'
 import { PROJECT_STATUSES, STATUS_LABELS } from '@/types'
 
 const router = useRouter()
 const loading = ref(true)
 const lastSyncedAt = ref<string | null>(null)
 const projects = ref<Project[]>([])
+const nowProjects = ref<NowProject[]>([])
 const search = ref('')
-const filter = ref<'all' | ProjectStatus>('all')
+const filter = ref<'all' | 'archived' | ProjectStatus>('all')
 
 const { syncTick } = useSync()
 
 async function load() {
   try {
-    const data = await api.board()
+    const [data, now] = await Promise.all([api.board(true), api.now()])
     lastSyncedAt.value = data.last_synced_at
     projects.value = data.projects
+    nowProjects.value = now
   } catch (e) {
     toast.error(e instanceof ApiError ? e.message : 'Failed to load projects')
   } finally {
@@ -56,9 +59,13 @@ onMounted(load)
 watch(syncTick, load)
 
 const counts = computed(() => {
-  const c: Record<string, number> = { all: projects.value.length }
+  const live = projects.value.filter((p) => !p.archived)
+  const c: Record<string, number> = {
+    all: live.length,
+    archived: projects.value.length - live.length,
+  }
   for (const s of PROJECT_STATUSES) {
-    c[s] = projects.value.filter((p) => p.status === s).length
+    c[s] = live.filter((p) => p.status === s).length
   }
   return c
 })
@@ -66,7 +73,11 @@ const counts = computed(() => {
 const visible = computed(() => {
   const q = search.value.trim().toLowerCase()
   return projects.value
-    .filter((p) => filter.value === 'all' || p.status === filter.value)
+    .filter((p) =>
+      filter.value === 'archived'
+        ? p.archived
+        : !p.archived && (filter.value === 'all' || p.status === filter.value),
+    )
     .filter(
       (p) =>
         q === '' ||
@@ -212,15 +223,44 @@ async function createProject() {
       </div>
       <div class="flex items-center gap-1">
         <Button
-          v-for="s in ['all', ...PROJECT_STATUSES] as const"
+          v-for="s in ['all', ...PROJECT_STATUSES, 'archived'] as const"
           :key="s"
           :variant="filter === s ? 'secondary' : 'ghost'"
           size="xs"
           @click="filter = s"
         >
-          {{ s === 'all' ? 'All' : STATUS_LABELS[s] }}
+          {{ s === 'all' ? 'All' : s === 'archived' ? 'Archived' : STATUS_LABELS[s] }}
           <span class="text-muted-foreground">{{ counts[s] }}</span>
         </Button>
+      </div>
+    </div>
+
+    <!-- Now: active projects and what's actually in flight -->
+    <div
+      v-if="!loading && nowProjects.length && filter === 'all' && !search.trim()"
+      class="rounded-lg border bg-card p-4"
+    >
+      <h2 class="mb-3 text-sm font-semibold tracking-tight text-muted-foreground">Now</h2>
+      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div v-for="p in nowProjects" :key="p.id" class="space-y-1.5">
+          <RouterLink :to="`/p/${p.id}`" class="text-sm font-medium hover:text-primary">
+            {{ p.name }}
+          </RouterLink>
+          <ul v-if="p.tasks.length" class="space-y-1">
+            <li
+              v-for="t in p.tasks.slice(0, 3)"
+              :key="t.id"
+              class="flex items-center gap-2 text-xs text-muted-foreground"
+            >
+              <Badge variant="outline" class="shrink-0 text-[9px]">{{ t.column_name }}</Badge>
+              <span class="truncate">{{ t.title }}</span>
+            </li>
+            <li v-if="p.tasks.length > 3" class="text-[10px] text-muted-foreground">
+              +{{ p.tasks.length - 3 }} more
+            </li>
+          </ul>
+          <p v-else class="text-xs italic text-muted-foreground">no tasks in flight</p>
+        </div>
       </div>
     </div>
 

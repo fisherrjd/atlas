@@ -1,0 +1,13 @@
+.git
+.direnv
+.venv
+.pytest_cache
+__pycache__
+tests/
+frontend/node_modules
+frontend/dist
+atlas.sqlite*
+backups/
+result*
+*.md
+!README.md

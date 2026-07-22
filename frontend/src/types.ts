@@ -38,11 +38,20 @@ export interface Project {
   status: ProjectStatus
   sort_order: number
   notes: string
+  archived: number
   created_at: string
   updated_at: string
   repos: Repo[]
   columns?: Column[]
   task_counts?: { total: number; done: number }
+}
+
+export interface NowTask extends Task {
+  column_name: string
+}
+
+export interface NowProject extends Omit<Project, 'repos' | 'columns'> {
+  tasks: NowTask[]
 }
 
 export interface BoardData {
