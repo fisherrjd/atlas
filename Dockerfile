@@ -1,12 +1,12 @@
 # Stage 1 — build the Vue SPA
-# pinned to the devshell's bun — vue-tsc 3 mis-resolves .vue modules under
-# some newer bun runtimes
 FROM oven/bun:1.3.13 AS frontend-build
 WORKDIR /build
 COPY frontend/package.json frontend/bun.lock* ./
 RUN bun install --frozen-lockfile
 COPY frontend/ .
-RUN bun run build
+# vite only — vue-tsc needs a real node runtime (none in this image); the
+# typecheck gate runs in the devshell (`check`) instead
+RUN bunx vite build
 
 # Stage 2 — Python app
 FROM python:3.13-slim
