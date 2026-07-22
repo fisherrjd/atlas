@@ -1,5 +1,7 @@
 # Stage 1 — build the Vue SPA
-FROM oven/bun:1 AS frontend-build
+# pinned to the devshell's bun — vue-tsc 3 mis-resolves .vue modules under
+# some newer bun runtimes
+FROM oven/bun:1.3.13 AS frontend-build
 WORKDIR /build
 COPY frontend/package.json frontend/bun.lock* ./
 RUN bun install --frozen-lockfile
