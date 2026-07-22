@@ -48,6 +48,28 @@ def fetch_repos() -> list[dict]:
     return repos
 
 
+def set_repo_archived(full_name: str, archived: bool) -> None:
+    """Archive/unarchive a repo ON GITHUB. Only ever called from an explicit
+    user action (the archive dialog's opt-in) — never from sync."""
+    action = "archive" if archived else "unarchive"
+    try:
+        proc = subprocess.run(
+            ["gh", "repo", action, full_name, "--yes"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except FileNotFoundError:
+        raise SyncError("gh not found on PATH — install the GitHub CLI", 503)
+    except subprocess.TimeoutExpired:
+        raise SyncError(f"gh timed out trying to {action} {full_name}", 502)
+    if proc.returncode != 0:
+        stderr = (proc.stderr or "gh failed").strip().splitlines()
+        raise SyncError(
+            f"gh {action} {full_name}: {stderr[-1] if stderr else 'unknown'}", 502
+        )
+
+
 def apply(fetched: list[dict]) -> dict:
     """Upsert repo metadata; auto-create projects for new, non-archived repos."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

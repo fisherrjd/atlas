@@ -25,6 +25,12 @@ export function freshness(project: Project): Freshness | null {
   return 'dormant'
 }
 
+/** jade's rule: no pushes in over a year → archive candidate. */
+export function isArchiveCandidate(project: Project): boolean {
+  const days = daysSincePush(project)
+  return days !== null && days > 365 && !project.archived
+}
+
 /** Intent (column) vs reality (pushes) mismatch hints. */
 export function mismatch(project: Project): 'stale' | 'moving' | null {
   const f = freshness(project)

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { PlusIcon, SearchIcon } from '@lucide/vue'
+import { PlusIcon, SearchIcon, ZapIcon } from '@lucide/vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
@@ -236,33 +236,43 @@ async function createProject() {
     </div>
 
     <!-- Now: active projects and what's actually in flight -->
-    <div
+    <section
       v-if="!loading && nowProjects.length && filter === 'all' && !search.trim()"
-      class="rounded-lg border bg-card p-4"
+      class="space-y-3"
     >
-      <h2 class="mb-3 text-sm font-semibold tracking-tight text-muted-foreground">Now</h2>
-      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <div v-for="p in nowProjects" :key="p.id" class="space-y-1.5">
-          <RouterLink :to="`/p/${p.id}`" class="text-sm font-medium hover:text-primary">
+      <div class="flex items-center gap-2">
+        <ZapIcon class="size-4 text-primary" />
+        <h2 class="text-sm font-semibold tracking-tight">Now</h2>
+        <Badge variant="secondary" class="text-[10px]">{{ nowProjects.length }}</Badge>
+      </div>
+      <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <RouterLink
+          v-for="p in nowProjects"
+          :key="p.id"
+          :to="`/p/${p.id}`"
+          class="group block rounded-lg border bg-card p-3.5 transition-colors hover:border-ring/60"
+        >
+          <span class="text-sm font-medium transition-colors group-hover:text-primary">
             {{ p.name }}
-          </RouterLink>
-          <ul v-if="p.tasks.length" class="space-y-1">
-            <li
-              v-for="t in p.tasks.slice(0, 3)"
-              :key="t.id"
-              class="flex items-center gap-2 text-xs text-muted-foreground"
-            >
-              <Badge variant="outline" class="shrink-0 text-[9px]">{{ t.column_name }}</Badge>
+          </span>
+          <ul v-if="p.tasks.length" class="mt-2.5 space-y-1.5">
+            <li v-for="t in p.tasks.slice(0, 4)" :key="t.id" class="flex items-center gap-2 text-xs">
+              <span class="size-1.5 shrink-0 rounded-full bg-primary/70" />
               <span class="truncate">{{ t.title }}</span>
+              <span class="ml-auto shrink-0 text-[10px] text-muted-foreground">
+                {{ t.column_name }}
+              </span>
             </li>
-            <li v-if="p.tasks.length > 3" class="text-[10px] text-muted-foreground">
-              +{{ p.tasks.length - 3 }} more
+            <li v-if="p.tasks.length > 4" class="pl-3.5 text-[10px] text-muted-foreground">
+              +{{ p.tasks.length - 4 }} more
             </li>
           </ul>
-          <p v-else class="text-xs italic text-muted-foreground">no tasks in flight</p>
-        </div>
+          <p v-else class="mt-2.5 text-xs italic text-muted-foreground">
+            nothing in flight — add a task
+          </p>
+        </RouterLink>
       </div>
-    </div>
+    </section>
 
     <div v-if="loading" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       <Skeleton v-for="i in 8" :key="i" class="h-28" />

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { TrendingUpIcon, TriangleAlertIcon } from '@lucide/vue'
+import { ArchiveIcon, TrendingUpIcon, TriangleAlertIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -10,7 +10,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { daysSincePush, freshness, mismatch, relativeDays } from '@/lib/activity'
+import { daysSincePush, freshness, isArchiveCandidate, mismatch, relativeDays } from '@/lib/activity'
 import type { Project, ProjectStatus } from '@/types'
 import { PROJECT_STATUSES, STATUS_LABELS } from '@/types'
 
@@ -22,6 +22,7 @@ const emit = defineEmits<{
 
 const dot = computed(() => freshness(props.project))
 const hint = computed(() => mismatch(props.project))
+const candidate = computed(() => isArchiveCandidate(props.project))
 const pushed = computed(() => relativeDays(daysSincePush(props.project)))
 const languages = computed(() => {
   const langs = props.project.repos
@@ -56,6 +57,11 @@ const DOT_CLASS = {
         v-else-if="hint === 'moving'"
         class="size-3.5 shrink-0 text-emerald-600"
         title="Parked, but pushed within 30 days"
+      />
+      <ArchiveIcon
+        v-if="candidate"
+        class="size-3.5 shrink-0 text-muted-foreground"
+        title="No pushes in over a year — archive candidate"
       />
       <DropdownMenu>
         <DropdownMenuTrigger as-child>

@@ -50,10 +50,10 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ status }),
     }),
-  setArchived: (id: number, archived: boolean) =>
+  setArchived: (id: number, archived: boolean, github = false) =>
     req<Project>(`/api/projects/${id}/archive`, {
       method: 'PATCH',
-      body: JSON.stringify({ archived }),
+      body: JSON.stringify({ archived, github }),
     }),
   deleteProject: (id: number) =>
     req<{ detail: string }>(`/api/projects/${id}`, { method: 'DELETE' }),

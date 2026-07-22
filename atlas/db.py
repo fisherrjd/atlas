@@ -415,6 +415,14 @@ def assign_repo(project_id: int, full_name: str) -> None:
         _assign_repo_tx(project_id, full_name)
 
 
+def set_repo_archived_flag(full_name: str, archived: bool) -> None:
+    with conn:
+        conn.execute(
+            "UPDATE repos SET archived = ? WHERE full_name = ?",
+            (1 if archived else 0, full_name),
+        )
+
+
 def unassign_repo(project_id: int, full_name: str) -> bool:
     with conn:
         cur = conn.execute(

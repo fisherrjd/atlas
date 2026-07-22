@@ -163,14 +163,27 @@ async def set_project_status(project_id: int, req: StatusReq) -> dict:
 
 class ArchiveReq(BaseModel):
     archived: bool
+    github: bool = False  # opt-in: also archive/unarchive the repos on GitHub
 
 
 @app.patch("/api/projects/{project_id}/archive")
 async def archive_project(project_id: int, req: ArchiveReq) -> dict:
-    project = db.set_archived(project_id, req.archived)
+    project = db.get_project(project_id)
     if project is None:
         raise HTTPException(404, detail="project not found")
-    return project
+    if req.github:
+        failures = []
+        for repo in project["repos"]:
+            if bool(repo["archived"]) == req.archived:
+                continue
+            try:
+                await asyncio.to_thread(sync.set_repo_archived, repo["full_name"], req.archived)
+                db.set_repo_archived_flag(repo["full_name"], req.archived)
+            except sync.SyncError as e:
+                failures.append(f"{repo['full_name']}: {e.detail}")
+        if failures:
+            raise HTTPException(502, detail="; ".join(failures[:3]))
+    return db.set_archived(project_id, req.archived)
 
 
 @app.delete("/api/projects/{project_id}")

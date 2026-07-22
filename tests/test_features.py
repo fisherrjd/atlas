@@ -1,6 +1,7 @@
 from pathlib import Path
 
-from atlas import db
+from atlas import db, sync
+from tests.conftest import add_repo
 
 
 def column(project: dict, name: str) -> dict:
@@ -40,6 +41,34 @@ def test_now_excludes_archived_active(client):
     p = client.post("/api/projects", json={"name": "shelved", "status": "active"}).json()
     client.patch(f"/api/projects/{p['id']}/archive", json={"archived": True})
     assert client.get("/api/now").json() == []
+
+
+def test_archive_with_github_writeback(client, monkeypatch):
+    calls = []
+    monkeypatch.setattr(sync, "set_repo_archived", lambda fn, a: calls.append((fn, a)))
+    add_repo("fisherrjd/old1")
+    add_repo("fisherrjd/old2")
+    p = client.post(
+        "/api/projects", json={"name": "grp", "repos": ["fisherrjd/old1", "fisherrjd/old2"]}
+    ).json()
+    r = client.patch(
+        f"/api/projects/{p['id']}/archive", json={"archived": True, "github": True}
+    )
+    assert r.status_code == 200 and r.json()["archived"] == 1
+    assert sorted(calls) == [("fisherrjd/old1", True), ("fisherrjd/old2", True)]
+    assert all(x["archived"] == 1 for x in client.get("/api/repos").json())
+
+
+def test_archive_github_failure_leaves_project_unarchived(client, monkeypatch):
+    def boom(fn, a):
+        raise sync.SyncError("gh archive failed", 502)
+
+    monkeypatch.setattr(sync, "set_repo_archived", boom)
+    add_repo("fisherrjd/x")
+    p = client.post("/api/projects", json={"name": "solo", "repos": ["fisherrjd/x"]}).json()
+    r = client.patch(f"/api/projects/{p['id']}/archive", json={"archived": True, "github": True})
+    assert r.status_code == 502
+    assert client.get(f"/api/projects/{p['id']}").json()["archived"] == 0
 
 
 def test_backup_creates_and_prunes(tmp_path):

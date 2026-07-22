@@ -17,6 +17,7 @@ import { toast } from 'vue-sonner'
 import draggable from 'vuedraggable'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -122,13 +123,28 @@ async function saveEdit() {
   }
 }
 
-async function toggleArchived() {
+const archiveOpen = ref(false)
+const archiveGithub = ref(false)
+
+function toggleArchived() {
+  if (!project.value) return
+  if (project.value.repos.length > 0) {
+    archiveGithub.value = false
+    archiveOpen.value = true
+  } else {
+    doArchive()
+  }
+}
+
+async function doArchive() {
   if (!project.value) return
   const next = !project.value.archived
   try {
-    const p = await api.setArchived(projectId, next)
-    project.value.archived = p.archived
-    toast.success(next ? 'Archived — hidden from the grid' : 'Restored to the grid')
+    const p = await api.setArchived(projectId, next, archiveGithub.value)
+    project.value = { ...project.value, archived: p.archived, repos: p.repos }
+    archiveOpen.value = false
+    const gh = archiveGithub.value ? ` (+${p.repos.length} on GitHub)` : ''
+    toast.success(next ? `Archived — hidden from the grid${gh}` : `Restored to the grid${gh}`)
   } catch (e) {
     toast.error(e instanceof ApiError ? e.message : 'Archive failed')
   }
@@ -567,6 +583,33 @@ watch(notes, (value) => {
         <DialogFooter>
           <Button variant="ghost" @click="editOpen = false">Cancel</Button>
           <Button :disabled="!editName.trim()" @click="saveEdit">Save</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- Archive confirm (projects with repos: offers GitHub write-back) -->
+    <Dialog v-model:open="archiveOpen">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{{ project.archived ? 'Restore' : 'Archive' }} {{ project.name }}?</DialogTitle>
+          <DialogDescription>
+            {{
+              project.archived
+                ? 'Brings the card back to the grid.'
+                : 'Hides the card from the grid — find it again under the Archived filter.'
+            }}
+          </DialogDescription>
+        </DialogHeader>
+        <div class="flex items-center gap-2">
+          <Checkbox id="archive-gh" v-model="archiveGithub" />
+          <Label for="archive-gh" class="font-normal">
+            Also {{ project.archived ? 'unarchive' : 'archive' }}
+            {{ project.repos.length }} repo{{ project.repos.length === 1 ? '' : 's' }} on GitHub
+          </Label>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" @click="archiveOpen = false">Cancel</Button>
+          <Button @click="doArchive">{{ project.archived ? 'Restore' : 'Archive' }}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
