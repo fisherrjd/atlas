@@ -3,9 +3,6 @@
 // + one entry here (+ the pre-paint list in index.html).
 export const THEMES = [
   { id: 'evergreen', label: 'Evergreen' },
-  { id: 'nordic', label: 'Nordic' },
-  { id: 'abyss', label: 'Abyss' },
-  { id: 'carbon', label: 'Carbon' },
   { id: 'dusk', label: 'Dusk' },
   { id: 'grapebox', label: 'Grapebox' },
 ] as const

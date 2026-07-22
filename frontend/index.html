@@ -9,7 +9,7 @@
       // apply persisted theme/mode before first paint to avoid a flash.
       // keep the theme list in sync with src/lib/themes.ts — a saved theme
       // that no longer exists must fall back, not paint unstyled.
-      const themes = ['evergreen', 'nordic', 'abyss', 'carbon', 'dusk', 'grapebox']
+      const themes = ['evergreen', 'dusk', 'grapebox']
       const saved = localStorage.getItem('app.theme')
       const mode = localStorage.getItem('app.mode') ?? 'dark'
       document.documentElement.dataset.theme = themes.includes(saved) ? saved : 'evergreen'
