@@ -1,0 +1,45 @@
+/* Carbon — pure neutral zinc with one electric-blue accent. Minimal. */
+
+[data-theme='carbon'] {
+  --background: 240 5% 96%;
+  --foreground: 240 6% 12%;
+  --card: 0 0% 99%;
+  --card-foreground: 240 6% 12%;
+  --popover: 0 0% 99%;
+  --popover-foreground: 240 6% 12%;
+  --primary: 217 90% 50%;            /* electric blue */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 240 5% 89%;
+  --secondary-foreground: 240 6% 16%;
+  --muted: 240 5% 91%;
+  --muted-foreground: 240 4% 42%;
+  --accent: 240 5% 87%;
+  --accent-foreground: 240 6% 14%;
+  --destructive: 0 72% 45%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 240 5% 82%;
+  --input: 240 5% 82%;
+  --ring: 217 90% 55%;
+}
+
+[data-theme='carbon'].dark {
+  --background: 240 4% 8%;
+  --foreground: 0 0% 90%;
+  --card: 240 4% 11%;
+  --card-foreground: 0 0% 90%;
+  --popover: 240 4% 11%;
+  --popover-foreground: 0 0% 90%;
+  --primary: 217 90% 60%;            /* electric blue */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 240 4% 15%;
+  --secondary-foreground: 0 0% 90%;
+  --muted: 240 4% 14%;
+  --muted-foreground: 240 4% 58%;
+  --accent: 240 4% 17%;
+  --accent-foreground: 0 0% 92%;
+  --destructive: 0 72% 55%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 240 4% 20%;
+  --input: 240 4% 20%;
+  --ring: 217 90% 60%;
+}

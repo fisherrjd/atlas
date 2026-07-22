@@ -1,8 +1,12 @@
 // the theme registry: pickers and the styleguide swatches are driven by this.
 // adding a preset = new file in assets/themes/ + @import in assets/index.css
-// + one entry here.
+// + one entry here (+ the pre-paint list in index.html).
 export const THEMES = [
-  { id: 'earthy', label: 'Earthy' },
+  { id: 'evergreen', label: 'Evergreen' },
+  { id: 'nordic', label: 'Nordic' },
+  { id: 'abyss', label: 'Abyss' },
+  { id: 'carbon', label: 'Carbon' },
+  { id: 'dusk', label: 'Dusk' },
   { id: 'grapebox', label: 'Grapebox' },
 ] as const
 

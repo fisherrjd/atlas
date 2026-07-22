@@ -2,7 +2,11 @@
 @import "tw-animate-css";
 
 /* theme presets — one file per theme; see README "Theming" */
-@import "./themes/earthy.css";
+@import "./themes/evergreen.css";
+@import "./themes/nordic.css";
+@import "./themes/abyss.css";
+@import "./themes/carbon.css";
+@import "./themes/dusk.css";
 @import "./themes/grapebox.css";
 
 @custom-variant dark (&:is(.dark *));
