@@ -58,6 +58,25 @@ async function load() {
 onMounted(load)
 watch(syncTick, load)
 
+// focus, not inventory: cap the band, rank in-flight work first
+const NOW_LIMIT = 6
+
+const nowVisible = computed(() => {
+  const latestTask = (p: NowProject) =>
+    p.tasks.reduce((max, t) => (t.updated_at > max ? t.updated_at : max), '')
+  return [...nowProjects.value]
+    .sort((a, b) => {
+      if ((a.tasks.length > 0) !== (b.tasks.length > 0)) return a.tasks.length ? -1 : 1
+      const la = latestTask(a)
+      const lb = latestTask(b)
+      if (la !== lb) return lb.localeCompare(la)
+      return a.name.localeCompare(b.name)
+    })
+    .slice(0, NOW_LIMIT)
+})
+
+const nowOverflow = computed(() => Math.max(0, nowProjects.value.length - NOW_LIMIT))
+
 const counts = computed(() => {
   const live = projects.value.filter((p) => !p.archived)
   const c: Record<string, number> = {
@@ -247,7 +266,7 @@ async function createProject() {
       </div>
       <div class="grid gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(230px,1fr))]">
         <RouterLink
-          v-for="p in nowProjects"
+          v-for="p in nowVisible"
           :key="p.id"
           :to="`/p/${p.id}`"
           class="card-hover group block rounded-lg border border-l-[3px] !border-l-primary bg-card p-2.5"
@@ -273,6 +292,13 @@ async function createProject() {
           </p>
         </RouterLink>
       </div>
+      <button
+        v-if="nowOverflow > 0"
+        class="text-xs text-muted-foreground underline decoration-dotted underline-offset-2 transition-colors hover:text-foreground"
+        @click="filter = 'active'"
+      >
+        +{{ nowOverflow }} more active
+      </button>
     </section>
 
     <div v-if="!loading" class="flex items-center gap-2 pt-1">
