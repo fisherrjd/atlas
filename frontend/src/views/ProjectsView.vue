@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { PlusIcon, SearchIcon, ZapIcon } from '@lucide/vue'
+import { LayoutGridIcon, PlusIcon, SearchIcon, ZapIcon } from '@lucide/vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
@@ -238,24 +238,24 @@ async function createProject() {
     <!-- Now: active projects and what's actually in flight -->
     <section
       v-if="!loading && nowProjects.length && filter === 'all' && !search.trim()"
-      class="space-y-3"
+      class="space-y-3 rounded-xl border bg-muted/40 p-4 shadow-[inset_0_1px_6px_rgb(0_0_0/0.12)]"
     >
       <div class="flex items-center gap-2">
         <ZapIcon class="size-4 text-primary" />
-        <h2 class="text-sm font-semibold tracking-tight">Now</h2>
+        <h2 class="text-base font-semibold tracking-wide">Now</h2>
         <Badge variant="secondary" class="text-[10px]">{{ nowProjects.length }}</Badge>
       </div>
-      <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div class="grid gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(230px,1fr))]">
         <RouterLink
           v-for="p in nowProjects"
           :key="p.id"
           :to="`/p/${p.id}`"
-          class="card-hover group block rounded-lg border bg-card p-3.5"
+          class="card-hover group block rounded-lg border border-l-[3px] !border-l-primary bg-card p-2.5"
         >
           <span class="text-sm font-medium transition-colors group-hover:text-primary">
             {{ p.name }}
           </span>
-          <ul v-if="p.tasks.length" class="mt-2.5 space-y-1.5">
+          <ul v-if="p.tasks.length" class="mt-1.5 space-y-1">
             <li v-for="t in p.tasks.slice(0, 4)" :key="t.id" class="flex items-center gap-2 text-xs">
               <span class="size-1.5 shrink-0 rounded-full bg-primary/70" />
               <span class="truncate">{{ t.title }}</span>
@@ -267,12 +267,19 @@ async function createProject() {
               +{{ p.tasks.length - 4 }} more
             </li>
           </ul>
-          <p v-else class="mt-2.5 text-xs italic text-muted-foreground">
-            nothing in flight — add a task
+          <p v-else class="mt-1.5 text-xs italic text-muted-foreground/60">
+            nothing in flight —
+            <span class="underline decoration-dotted underline-offset-2">add a task</span>
           </p>
         </RouterLink>
       </div>
     </section>
+
+    <div v-if="!loading" class="flex items-center gap-2 pt-1">
+      <LayoutGridIcon class="size-4 text-muted-foreground" />
+      <h2 class="text-base font-semibold tracking-wide">All projects</h2>
+      <Badge variant="secondary" class="text-[10px]">{{ visible.length }}</Badge>
+    </div>
 
     <div v-if="loading" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       <Skeleton v-for="i in 8" :key="i" class="h-28" />
