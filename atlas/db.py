@@ -8,8 +8,10 @@ this app's state is cheap to rebuild (delete the file and resync).
 Hierarchy: projects (grid on the main page) → columns (each project's own
 kanban, default Todo/Doing/Done) → tasks.
 
-Invariant: sync only ever writes repo metadata columns — ``repos.project_id``
-and everything in ``projects``/``columns``/``tasks`` belong to the user.
+Invariant: sync writes repo metadata columns and may auto-create a project
+card for an unassigned repo — but it never overwrites a user-set
+``repos.project_id`` and never modifies existing
+``projects``/``columns``/``tasks``; those belong to the user.
 """
 import os
 import sqlite3

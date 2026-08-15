@@ -4,9 +4,10 @@ Uses `gh` rather than the REST API directly: it's already authed on the host,
 so there's no token to provision or rotate, and no extra dependencies. Sync is
 user-triggered and infrequent — subprocess overhead is irrelevant.
 
-Rules (the invariant lives in db.py too): sync upserts repo *metadata* only.
-It never writes ``repos.project_id`` and never touches projects or tasks —
-kanban status, grouping, notes, and tasks are user state.
+Rules (the invariant lives in db.py too): sync upserts repo *metadata*, and
+auto-creates an "idea" card for unassigned, non-archived repos. It never
+overwrites a user-set ``repos.project_id`` and never modifies existing
+projects or tasks — kanban status, grouping, notes, and tasks are user state.
 """
 import json
 import subprocess

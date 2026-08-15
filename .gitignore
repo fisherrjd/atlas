@@ -7,6 +7,7 @@ result*
 atlas.sqlite
 atlas.sqlite-wal
 atlas.sqlite-shm
+backups/
 
 # bun
 node_modules/

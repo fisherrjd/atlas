@@ -22,10 +22,12 @@ registered last) — no CORS anywhere, keep it that way.
 - **Hierarchy:** projects → columns (each project's own kanban; default
   Todo/Doing/Done, `is_done` flag drives the done-count) → tasks. Column
   deletion is guarded (never the last column, never one with tasks).
-- **The sync invariant:** `sync.apply()` upserts `repos` metadata columns
-  only — it never writes `repos.project_id` and never touches `projects`,
-  `columns`, or `tasks`. Kanban state, grouping, notes, tasks are user state.
-  Any future sync feature must preserve this.
+- **The sync invariant:** `sync.apply()` upserts `repos` metadata columns,
+  and auto-creates an "idea" card (setting `repos.project_id`) for repos that
+  are unassigned and non-archived. It never overwrites a user-set assignment
+  and never modifies existing `projects`, `columns`, or `tasks` — kanban
+  state, grouping, notes, tasks are user state. Any future sync feature must
+  preserve this.
 - **Husk rule** (`db._maybe_delete_husk`): when a repo is reassigned away,
   its old project is deleted only if it has no repos, no tasks, empty notes,
   AND still carries the repo's name (i.e. an untouched sync-auto-created
