@@ -15,6 +15,9 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import draggable from 'vuedraggable'
+import MarkdownView from '@/components/content/MarkdownView.vue'
+import SaveIndicator from '@/components/SaveIndicator.vue'
+import ConfirmDialog from '@/components/states/ConfirmDialog.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -37,6 +40,7 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { useSync } from '@/composables/useSync'
 import { api, ApiError } from '@/lib/api'
@@ -149,8 +153,6 @@ async function doArchive() {
     toast.error(e instanceof ApiError ? e.message : 'Archive failed')
   }
 }
-
-const deleteOpen = ref(false)
 
 async function deleteProject() {
   try {
@@ -318,6 +320,7 @@ async function removeTask(col: Column, task: Task) {
 // ── Notes (debounced autosave) ────────────────────────────────────────────────
 
 const notes = ref('')
+const notesTab = ref('write')
 const noteState = ref<'saved' | 'saving' | 'error'>('saved')
 let noteTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -350,7 +353,11 @@ watch(notes, (value) => {
           <Button variant="ghost" size="icon-sm" aria-label="Back to projects" @click="router.push('/')">
             <ArrowLeftIcon />
           </Button>
-          <h1 class="text-2xl font-bold tracking-tight">{{ project.name }}</h1>
+          <h1
+            class="bg-gradient-to-r from-foreground to-foreground/60 bg-clip-text text-2xl font-bold tracking-tight text-transparent"
+          >
+            {{ project.name }}
+          </h1>
           <span
             v-if="dot"
             class="size-2.5 rounded-full"
@@ -383,10 +390,18 @@ watch(notes, (value) => {
           <ArchiveIcon v-else />
           {{ project.archived ? 'Restore' : 'Archive' }}
         </Button>
-        <Button variant="ghost" size="sm" class="text-destructive" @click="deleteOpen = true">
-          <Trash2Icon />
-          Delete
-        </Button>
+        <ConfirmDialog
+          destructive
+          :title="`Delete ${project.name}?`"
+          description="Columns, tasks, and notes are deleted; linked repos return to the unassigned pool."
+          confirm-label="Delete"
+          @confirm="deleteProject"
+        >
+          <Button variant="ghost" size="sm" class="text-destructive">
+            <Trash2Icon />
+            Delete
+          </Button>
+        </ConfirmDialog>
       </div>
     </div>
 
@@ -553,15 +568,24 @@ watch(notes, (value) => {
     <div class="space-y-2">
       <div class="flex items-center gap-2">
         <h2 class="text-lg font-semibold tracking-tight">Notes</h2>
-        <span class="text-xs text-muted-foreground">
-          {{ noteState === 'saving' ? 'Saving…' : noteState === 'error' ? 'Save failed — still editing locally' : 'Saved' }}
-        </span>
+        <SaveIndicator :state="noteState" />
+        <Tabs v-model="notesTab" class="ml-auto">
+          <TabsList class="h-8">
+            <TabsTrigger value="write" class="px-2.5 text-xs">Write</TabsTrigger>
+            <TabsTrigger value="preview" class="px-2.5 text-xs">Preview</TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
       <Textarea
+        v-if="notesTab === 'write'"
         v-model="notes"
-        placeholder="Plans, links, whatever…"
+        placeholder="Plans, links, markdown…"
         class="min-h-40 font-mono text-sm"
       />
+      <div v-else class="min-h-40 rounded-md border bg-card px-4 py-3">
+        <MarkdownView v-if="notes.trim()" :source="notes" />
+        <p v-else class="text-sm text-muted-foreground">Nothing to preview yet.</p>
+      </div>
     </div>
 
     <!-- Edit dialog -->
@@ -610,22 +634,6 @@ watch(notes, (value) => {
         <DialogFooter>
           <Button variant="ghost" @click="archiveOpen = false">Cancel</Button>
           <Button @click="doArchive">{{ project.archived ? 'Restore' : 'Archive' }}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-
-    <!-- Delete confirm -->
-    <Dialog v-model:open="deleteOpen">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Delete {{ project.name }}?</DialogTitle>
-          <DialogDescription>
-            Columns, tasks, and notes are deleted; linked repos return to the unassigned pool.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="ghost" @click="deleteOpen = false">Cancel</Button>
-          <Button variant="destructive" @click="deleteProject">Delete</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

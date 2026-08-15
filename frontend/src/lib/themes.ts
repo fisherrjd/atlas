@@ -4,6 +4,7 @@
 export const THEMES = [
   { id: 'evergreen', label: 'Evergreen' },
   { id: 'dusk', label: 'Dusk' },
+  { id: 'earthy', label: 'Earthy' },
   { id: 'grapebox', label: 'Grapebox' },
 ] as const
 

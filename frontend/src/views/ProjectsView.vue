@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { LayoutGridIcon, PlusIcon, SearchIcon, ZapIcon } from '@lucide/vue'
+import { LayoutGridIcon, PlusIcon, ZapIcon } from '@lucide/vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import ProjectCard from '@/components/ProjectCard.vue'
+import FilterBar from '@/components/data/FilterBar.vue'
+import SearchInput from '@/components/data/SearchInput.vue'
+import EmptyState from '@/components/states/EmptyState.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -112,6 +115,13 @@ const visible = computed(() => {
     })
 })
 
+const filtersActive = computed(() => search.value.trim() !== '' || filter.value !== 'all')
+
+function clearFilters() {
+  search.value = ''
+  filter.value = 'all'
+}
+
 async function setStatus(project: Project, status: ProjectStatus) {
   const previous = project.status
   project.status = status // optimistic
@@ -170,7 +180,11 @@ async function createProject() {
   <div class="space-y-4">
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div>
-        <h1 class="text-2xl font-bold tracking-tight">Projects</h1>
+        <h1
+          class="bg-gradient-to-r from-foreground to-foreground/60 bg-clip-text text-2xl font-bold tracking-tight text-transparent"
+        >
+          Projects
+        </h1>
         <p v-if="lastSyncedAt" class="text-xs text-muted-foreground">
           last synced {{ new Date(lastSyncedAt).toLocaleString() }}
         </p>
@@ -235,12 +249,9 @@ async function createProject() {
       </Dialog>
     </div>
 
-    <div class="flex flex-wrap items-center gap-2">
-      <div class="relative">
-        <SearchIcon class="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input v-model="search" placeholder="Search projects…" class="h-8 w-56 pl-8 text-sm" />
-      </div>
-      <div class="flex items-center gap-1">
+    <FilterBar :count="visible.length" :active="filtersActive" @clear="clearFilters">
+      <SearchInput v-model="search" placeholder="Search projects…" />
+      <div class="flex flex-wrap items-center gap-1">
         <Button
           v-for="s in ['all', ...PROJECT_STATUSES, 'archived'] as const"
           :key="s"
@@ -252,7 +263,7 @@ async function createProject() {
           <span class="text-muted-foreground">{{ counts[s] }}</span>
         </Button>
       </div>
-    </div>
+    </FilterBar>
 
     <!-- Now: active projects and what's actually in flight -->
     <section
@@ -310,13 +321,21 @@ async function createProject() {
     <div v-if="loading" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       <Skeleton v-for="i in 8" :key="i" class="h-28" />
     </div>
-    <div v-else-if="visible.length === 0" class="py-16 text-center text-sm text-muted-foreground">
-      No projects match. Try a sync, or clear the search.
-    </div>
+    <EmptyState
+      v-else-if="visible.length === 0"
+      title="No projects match"
+      description="Try a sync, or clear the search."
+    >
+      <template #action>
+        <Button variant="outline" size="sm" @click="clearFilters">Clear filters</Button>
+      </template>
+    </EmptyState>
     <div v-else class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       <ProjectCard
-        v-for="p in visible"
+        v-for="(p, i) in visible"
         :key="p.id"
+        class="rise-in"
+        :style="{ animationDelay: `${Math.min(i, 8) * 40}ms` }"
         :project="p"
         @click="router.push(`/p/${p.id}`)"
         @set-status="(s) => setStatus(p, s)"
