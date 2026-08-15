@@ -89,10 +89,13 @@ class MoveColumnReq(BaseModel):
 
 class CreateTaskReq(BaseModel):
     title: str = Field(min_length=1)
+    description: str = ""
+    source: str = ""
 
 
 class UpdateTaskReq(BaseModel):
-    title: str = Field(min_length=1)
+    title: str | None = Field(default=None, min_length=1)
+    description: str | None = None
 
 
 class MoveTaskReq(BaseModel):
@@ -231,8 +234,8 @@ async def delete_column(column_id: int) -> dict:
 # ── Repos ────────────────────────────────────────────────────────────────────
 
 @app.get("/api/repos")
-async def list_repos(unassigned: bool = False) -> list[dict]:
-    return db.list_repos(unassigned=unassigned)
+async def list_repos(unassigned: bool = False, archived: bool = False) -> list[dict]:
+    return db.list_repos(unassigned=unassigned, archived=archived)
 
 
 @app.post("/api/projects/{project_id}/repos")
@@ -257,7 +260,7 @@ async def unassign_repo(project_id: int, full_name: str) -> dict:
 
 @app.post("/api/columns/{column_id}/tasks", status_code=201)
 async def create_task(column_id: int, req: CreateTaskReq) -> dict:
-    task = db.create_task(column_id, req.title)
+    task = db.create_task(column_id, req.title, req.description, req.source)
     if task is None:
         raise HTTPException(404, detail="column not found")
     return task
@@ -265,7 +268,8 @@ async def create_task(column_id: int, req: CreateTaskReq) -> dict:
 
 @app.patch("/api/tasks/{task_id}")
 async def update_task(task_id: int, req: UpdateTaskReq) -> dict:
-    task = db.update_task(task_id, req.title)
+    fields = {k: v for k, v in req.model_dump().items() if v is not None}
+    task = db.update_task(task_id, fields)
     if task is None:
         raise HTTPException(404, detail="task not found")
     return task

@@ -77,3 +77,66 @@ def test_backup_creates_and_prunes(tmp_path):
         db.backup(Path(tmp_path), f"2026072{i}", keep=2)
     files = sorted(f.name for f in Path(tmp_path).glob("atlas-*.sqlite"))
     assert files == ["atlas-20260721.sqlite", "atlas-20260722.sqlite"]
+
+
+# ── task description + source ─────────────────────────────────────────────────
+
+def test_task_description_and_source_roundtrip(client):
+    p = client.post("/api/projects", json={"name": "proj"}).json()
+    col = p["columns"][0]
+    t = client.post(
+        f"/api/columns/{col['id']}/tasks",
+        json={"title": "fix it", "description": "## evidence\n- line", "source": "log-scan"},
+    ).json()
+    assert t["description"] == "## evidence\n- line"
+    assert t["source"] == "log-scan"
+
+    # patch description alone; title untouched, source immutable
+    t2 = client.patch(f"/api/tasks/{t['id']}", json={"description": "updated"}).json()
+    assert t2["description"] == "updated" and t2["title"] == "fix it"
+    assert t2["source"] == "log-scan"
+
+    # source survives a move
+    done_col = p["columns"][-1]
+    moved = client.patch(
+        f"/api/tasks/{t['id']}/move", json={"column_id": done_col["id"], "index": 0}
+    ).json()
+    assert moved["source"] == "log-scan" and moved["description"] == "updated"
+
+
+def test_task_defaults_empty_description_source(client):
+    p = client.post("/api/projects", json={"name": "proj"}).json()
+    t = client.post(
+        f"/api/columns/{p['columns'][0]['id']}/tasks", json={"title": "plain"}
+    ).json()
+    assert t["description"] == "" and t["source"] == ""
+
+
+# ── archived only on the Archived tab ─────────────────────────────────────────
+
+def test_repos_default_excludes_archived(client):
+    add_repo("o/live")
+    add_repo("o/dead", archived=1)
+    names = [r["full_name"] for r in client.get("/api/repos").json()]
+    assert names == ["o/live"]
+
+    only_archived = [r["full_name"] for r in client.get("/api/repos?archived=true").json()]
+    assert only_archived == ["o/dead"]
+
+    unassigned = [r["full_name"] for r in client.get("/api/repos?unassigned=true").json()]
+    assert unassigned == ["o/live"]
+
+
+def test_board_excludes_archived_repos_from_live_projects(client):
+    p = client.post("/api/projects", json={"name": "proj"}).json()
+    add_repo("o/live", project_id=p["id"])
+    add_repo("o/dead", project_id=p["id"], archived=1)
+
+    board = client.get("/api/board").json()
+    proj = next(x for x in board["projects"] if x["id"] == p["id"])
+    assert [r["full_name"] for r in proj["repos"]] == ["o/live"]
+
+    # include_archived still returns everything (feeds the Archived tab)
+    board_all = client.get("/api/board?include_archived=true").json()
+    proj_all = next(x for x in board_all["projects"] if x["id"] == p["id"])
+    assert {r["full_name"] for r in proj_all["repos"]} == {"o/live", "o/dead"}

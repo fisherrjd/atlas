@@ -5,6 +5,7 @@ import {
   ArrowLeftIcon,
   CheckCircle2Icon,
   ExternalLinkIcon,
+  FileTextIcon,
   GripVerticalIcon,
   PencilIcon,
   PlusIcon,
@@ -196,6 +197,11 @@ async function removeRepo(fullName: string) {
   }
 }
 
+// archived repos hide behind a muted toggle — visible chips are live repos only
+const liveRepos = computed(() => project.value?.repos.filter((r) => !r.archived) ?? [])
+const archivedRepoList = computed(() => project.value?.repos.filter((r) => r.archived) ?? [])
+const showArchivedRepos = ref(false)
+
 // ── Columns ──────────────────────────────────────────────────────────────────
 
 interface ColumnChangeEvent {
@@ -317,6 +323,37 @@ async function removeTask(col: Column, task: Task) {
   }
 }
 
+// ── Task detail (title + description body; source badge shows who filed it) ───
+
+const taskDetail = ref<Task | null>(null)
+const taskTitle = ref('')
+const taskDescription = ref('')
+const taskTab = ref('preview')
+
+function openTask(task: Task) {
+  taskDetail.value = task
+  taskTitle.value = task.title
+  taskDescription.value = task.description
+  taskTab.value = task.description.trim() ? 'preview' : 'write'
+}
+
+async function saveTask() {
+  if (!taskDetail.value || !taskTitle.value.trim()) return
+  try {
+    const t = await api.updateTask(taskDetail.value.id, {
+      title: taskTitle.value.trim(),
+      description: taskDescription.value,
+    })
+    for (const c of columns.value) {
+      const i = c.tasks.findIndex((x) => x.id === t.id)
+      if (i >= 0) c.tasks[i] = t
+    }
+    taskDetail.value = null
+  } catch (e) {
+    toast.error(e instanceof ApiError ? e.message : 'Save failed')
+  }
+}
+
 // ── Notes (debounced autosave) ────────────────────────────────────────────────
 
 const notes = ref('')
@@ -405,10 +442,10 @@ watch(notes, (value) => {
       </div>
     </div>
 
-    <!-- Repos -->
+    <!-- Repos (archived ones stay hidden behind the toggle) -->
     <div class="flex flex-wrap items-center gap-2">
       <div
-        v-for="repo in project.repos"
+        v-for="repo in showArchivedRepos ? project.repos : liveRepos"
         :key="repo.full_name"
         class="flex items-center gap-1.5 rounded-md border bg-card px-2 py-1 text-xs"
         :class="repo.archived ? 'opacity-60' : ''"
@@ -432,6 +469,13 @@ watch(notes, (value) => {
           <XIcon class="size-3" />
         </button>
       </div>
+      <button
+        v-if="archivedRepoList.length"
+        class="text-xs text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground"
+        @click="showArchivedRepos = !showArchivedRepos"
+      >
+        {{ showArchivedRepos ? 'hide archived' : `+${archivedRepoList.length} archived` }}
+      </button>
       <Button variant="outline" size="xs" @click="addRepoOpen = true">
         <PlusIcon />
         Add repo
@@ -501,12 +545,21 @@ watch(notes, (value) => {
                 <div
                   class="group flex cursor-grab items-center gap-2 rounded-md border bg-card px-2.5 py-1.5 text-sm"
                   :class="col.is_done ? 'text-muted-foreground line-through' : ''"
+                  @click="openTask(task)"
                 >
                   <span class="flex-1">{{ task.title }}</span>
+                  <FileTextIcon
+                    v-if="task.description"
+                    class="size-3 shrink-0 text-muted-foreground"
+                    title="has details"
+                  />
+                  <Badge v-if="task.source" variant="secondary" class="shrink-0 text-[9px]">
+                    {{ task.source }}
+                  </Badge>
                   <button
                     class="text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
                     :aria-label="`Delete ${task.title}`"
-                    @click="removeTask(col, task)"
+                    @click.stop="removeTask(col, task)"
                   >
                     <XIcon class="size-3.5" />
                   </button>
@@ -634,6 +687,51 @@ watch(notes, (value) => {
         <DialogFooter>
           <Button variant="ghost" @click="archiveOpen = false">Cancel</Button>
           <Button @click="doArchive">{{ project.archived ? 'Restore' : 'Archive' }}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- Task detail dialog -->
+    <Dialog :open="taskDetail !== null" @update:open="(v) => !v && (taskDetail = null)">
+      <DialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle class="flex items-center gap-2">
+            Task
+            <Badge v-if="taskDetail?.source" variant="secondary" class="text-[10px]">
+              filed by {{ taskDetail.source }}
+            </Badge>
+          </DialogTitle>
+        </DialogHeader>
+        <div class="space-y-4">
+          <div class="space-y-2">
+            <Label for="task-title">Title</Label>
+            <Input id="task-title" v-model="taskTitle" @keyup.enter="saveTask" />
+          </div>
+          <div class="space-y-2">
+            <div class="flex items-center gap-2">
+              <Label>Details</Label>
+              <Tabs v-model="taskTab" class="ml-auto">
+                <TabsList class="h-7">
+                  <TabsTrigger value="write" class="px-2 text-xs">Write</TabsTrigger>
+                  <TabsTrigger value="preview" class="px-2 text-xs">Preview</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
+            <Textarea
+              v-if="taskTab === 'write'"
+              v-model="taskDescription"
+              placeholder="Evidence, acceptance criteria, links… (markdown)"
+              class="min-h-48 font-mono text-xs"
+            />
+            <div v-else class="min-h-48 rounded-md border bg-card px-4 py-3">
+              <MarkdownView v-if="taskDescription.trim()" :source="taskDescription" />
+              <p v-else class="text-sm text-muted-foreground">No details yet.</p>
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" @click="taskDetail = null">Cancel</Button>
+          <Button :disabled="!taskTitle.trim()" @click="saveTask">Save</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

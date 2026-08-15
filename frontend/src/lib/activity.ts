@@ -5,7 +5,11 @@ export type Freshness = 'fresh' | 'cooling' | 'dormant'
 const DAY = 24 * 60 * 60 * 1000
 
 export function lastPush(project: Project): string | null {
-  const dates = project.repos.map((r) => r.pushed_at).filter((d): d is string => d !== null)
+  // archived repos don't count as activity — they live only on the Archived tab
+  const dates = project.repos
+    .filter((r) => !r.archived)
+    .map((r) => r.pushed_at)
+    .filter((d): d is string => d !== null)
   if (dates.length === 0) return null
   return dates.reduce((a, b) => (a > b ? a : b))
 }

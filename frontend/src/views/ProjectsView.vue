@@ -105,7 +105,12 @@ const visible = computed(() => {
         q === '' ||
         p.name.toLowerCase().includes(q) ||
         p.description.toLowerCase().includes(q) ||
-        p.repos.some((r) => r.full_name.toLowerCase().includes(q)),
+        // archived repo names only count as a match on the Archived tab
+        p.repos.some(
+          (r) =>
+            (filter.value === 'archived' || !r.archived) &&
+            r.full_name.toLowerCase().includes(q),
+        ),
     )
     .sort((a, b) => {
       const pa = lastPush(a)
@@ -116,6 +121,16 @@ const visible = computed(() => {
 })
 
 const filtersActive = computed(() => search.value.trim() !== '' || filter.value !== 'all')
+
+// archived repos live ONLY here: loaded on demand when the Archived tab opens
+const archivedRepos = ref<Repo[]>([])
+watch(filter, async (f) => {
+  if (f === 'archived') {
+    archivedRepos.value = await api.repos(false, true).catch(() => [])
+  }
+})
+
+const projectName = (id: number | null) => projects.value.find((p) => p.id === id)?.name
 
 function clearFilters() {
   search.value = ''
@@ -341,5 +356,27 @@ async function createProject() {
         @set-status="(s) => setStatus(p, s)"
       />
     </div>
+
+    <!-- Archived repos: the only place they appear anywhere in the app -->
+    <section v-if="filter === 'archived' && archivedRepos.length" class="space-y-2 pt-2">
+      <h2 class="text-base font-semibold tracking-wide">Archived repos</h2>
+      <div class="rounded-md border">
+        <div
+          v-for="r in archivedRepos"
+          :key="r.full_name"
+          class="flex items-center gap-2 border-b px-3 py-1.5 text-xs last:border-b-0"
+        >
+          <a :href="r.url" target="_blank" class="truncate hover:underline">{{ r.full_name }}</a>
+          <span v-if="r.language" class="text-muted-foreground">{{ r.language }}</span>
+          <RouterLink
+            v-if="r.project_id !== null && projectName(r.project_id)"
+            :to="`/p/${r.project_id}`"
+            class="ml-auto shrink-0 text-muted-foreground hover:underline"
+          >
+            in {{ projectName(r.project_id) }}
+          </RouterLink>
+        </div>
+      </div>
+    </section>
   </div>
 </template>

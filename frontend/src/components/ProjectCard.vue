@@ -24,10 +24,10 @@ const dot = computed(() => freshness(props.project))
 const hint = computed(() => mismatch(props.project))
 const candidate = computed(() => isArchiveCandidate(props.project))
 const pushed = computed(() => relativeDays(daysSincePush(props.project)))
+// archived repos are invisible outside the Archived tab — never count them here
+const liveRepos = computed(() => props.project.repos.filter((r) => !r.archived))
 const languages = computed(() => {
-  const langs = props.project.repos
-    .map((r) => r.language)
-    .filter((l): l is string => l !== null)
+  const langs = liveRepos.value.map((r) => r.language).filter((l): l is string => l !== null)
   return [...new Set(langs)].slice(0, 2)
 })
 
@@ -90,8 +90,8 @@ const DOT_CLASS = {
       <Badge v-for="lang in languages" :key="lang" variant="secondary" class="text-[10px]">
         {{ lang }}
       </Badge>
-      <Badge v-if="project.repos.length > 1" variant="outline" class="text-[10px]">
-        {{ project.repos.length }} repos
+      <Badge v-if="liveRepos.length > 1" variant="outline" class="text-[10px]">
+        {{ liveRepos.length }} repos
       </Badge>
       <Badge
         v-if="project.task_counts && project.task_counts.total > 0"
@@ -100,7 +100,7 @@ const DOT_CLASS = {
       >
         {{ project.task_counts.done }}/{{ project.task_counts.total }} tasks
       </Badge>
-      <span v-if="project.repos.length" class="ml-auto text-[10px] text-muted-foreground">
+      <span v-if="liveRepos.length" class="ml-auto text-[10px] text-muted-foreground">
         {{ pushed }}
       </span>
     </div>
