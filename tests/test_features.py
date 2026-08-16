@@ -179,3 +179,41 @@ def test_heimdall_proxy_502_when_unreachable(client, monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", fail)
     r = client.get("/api/heimdall/health")
     assert r.status_code == 502
+
+
+def test_heimdall_asset_proxy(client, monkeypatch):
+    import io
+    import urllib.request
+
+    class FakeResp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    calls = []
+
+    def fake_urlopen(url, timeout=None):
+        calls.append(url)
+        return FakeResp(b"\x89PNGfake")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    r = client.get("/api/heimdall/avatars/implementer.png")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/png"
+    assert r.content == b"\x89PNGfake"
+    assert calls == ["http://10.42.0.1:3050/api/avatars/implementer.png"]
+
+    r = client.get("/api/heimdall/sounds/ticket.wav")
+    assert r.status_code == 200 and r.headers["content-type"] == "audio/wav"
+
+    # kind and basename are allowlisted before any upstream call
+    n = len(calls)
+    assert client.get("/api/heimdall/nope/x.png").status_code == 404
+    assert client.get("/api/heimdall/avatars/x.gif").status_code == 404
+    # encoded traversal never matches the route (SPA fallback answers instead)
+    r = client.get("/api/heimdall/avatars/..%2Fsecret.png")
+    assert "image/png" not in r.headers["content-type"]
+    assert len(calls) == n

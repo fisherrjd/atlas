@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { EyeIcon, RefreshCwIcon } from '@lucide/vue'
-import { onMounted, ref } from 'vue'
+import { EyeIcon, RefreshCwIcon, Volume2Icon, VolumeXIcon } from '@lucide/vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { toast } from 'vue-sonner'
 import EmptyState from '@/components/states/EmptyState.vue'
 import { Badge } from '@/components/ui/badge'
@@ -49,6 +49,8 @@ interface Persona {
   effort: string
   timeout_s: number
   tools: string[]
+  role: string
+  avatar: string | null
 }
 
 const loading = ref(true)
@@ -58,9 +60,35 @@ const pulses = ref<Pulse[]>([])
 const tickets = ref<Ticket[]>([])
 const suppressions = ref<Suppression[]>([])
 const personas = ref<Persona[]>([])
+const headerAvatarOk = ref(true)
 
-async function load() {
-  loading.value = true
+// event chimes: opt-out persists; browsers reject play() before the first
+// user interaction, so failures are swallowed rather than fought
+const soundOn = ref(localStorage.getItem('heimdall-sound') !== 'off')
+function toggleSound() {
+  soundOn.value = !soundOn.value
+  localStorage.setItem('heimdall-sound', soundOn.value ? 'on' : 'off')
+}
+function playChime(sound: 'ticket' | 'pr-open' | 'fail') {
+  if (!soundOn.value) return
+  new Audio(`/api/heimdall/sounds/${sound}.wav`).play().catch(() => {})
+}
+
+let knownTickets: Map<number, string> | null = null
+function chimeOnChanges(next: Ticket[]) {
+  if (knownTickets !== null) {
+    for (const t of next) {
+      const prev = knownTickets.get(t.id)
+      if (prev === undefined) playChime('ticket')
+      else if (prev !== t.state && t.state === 'in_pr') playChime('pr-open')
+      else if (prev !== t.state && t.state === 'rejected') playChime('fail')
+    }
+  }
+  knownTickets = new Map(next.map((t) => [t.id, t.state]))
+}
+
+async function load(silent = false) {
+  if (!silent) loading.value = true
   unreachable.value = false
   try {
     const [health, p, t, s, per] = await Promise.all([
@@ -72,6 +100,7 @@ async function load() {
     ])
     name.value = health.name
     pulses.value = p
+    chimeOnChanges(t)
     tickets.value = t
     suppressions.value = s
     personas.value = per
@@ -79,11 +108,17 @@ async function load() {
     unreachable.value = true
     if (e instanceof ApiError && e.status !== 502) toast.error(e.message)
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
   }
 }
 
-onMounted(load)
+const POLL_MS = 30_000
+let pollTimer: ReturnType<typeof setInterval> | undefined
+onMounted(() => {
+  load()
+  pollTimer = setInterval(() => load(true), POLL_MS)
+})
+onUnmounted(() => clearInterval(pollTimer))
 
 const STATUS_CLASS: Record<string, string> = {
   ok: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
@@ -108,7 +143,15 @@ const STATE_CLASS: Record<string, string> = {
   <div class="space-y-6">
     <div class="flex flex-wrap items-center gap-3">
       <div class="flex items-center gap-2">
+        <img
+          v-if="headerAvatarOk"
+          src="/api/heimdall/avatars/heimdall.png"
+          alt=""
+          class="size-8 rounded-md shadow-sm [image-rendering:pixelated]"
+          @error="headerAvatarOk = false"
+        />
         <span
+          v-else
           class="grid size-8 place-items-center rounded-md bg-gradient-to-br from-primary to-primary/60 text-primary-foreground shadow-sm"
         >
           <EyeIcon class="size-4" />
@@ -124,10 +167,21 @@ const STATE_CLASS: Record<string, string> = {
           </p>
         </div>
       </div>
-      <Button variant="ghost" size="sm" class="ml-auto" :disabled="loading" @click="load">
-        <RefreshCwIcon :class="loading ? 'animate-spin' : ''" />
-        Refresh
-      </Button>
+      <div class="ml-auto flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="sm"
+          :title="soundOn ? 'Mute event chimes' : 'Unmute event chimes'"
+          @click="toggleSound"
+        >
+          <Volume2Icon v-if="soundOn" />
+          <VolumeXIcon v-else />
+        </Button>
+        <Button variant="ghost" size="sm" :disabled="loading" @click="load()">
+          <RefreshCwIcon :class="loading ? 'animate-spin' : ''" />
+          Refresh
+        </Button>
+      </div>
     </div>
 
     <div v-if="loading" class="space-y-3">
@@ -152,6 +206,12 @@ const STATE_CLASS: Record<string, string> = {
         <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Card v-for="p in personas" :key="p.name" class="gap-2 p-3">
             <div class="flex items-center gap-2">
+              <img
+                v-if="p.avatar"
+                :src="`/api/heimdall/avatars/${p.avatar}`"
+                alt=""
+                class="size-7 rounded [image-rendering:pixelated]"
+              />
               <span class="text-sm font-medium">{{ p.name }}</span>
               <Badge variant="secondary" class="text-[10px]">{{ p.model }}</Badge>
               <Badge variant="outline" class="text-[10px]">{{ p.effort }}</Badge>
