@@ -6,7 +6,7 @@ at import. ``ATLAS_DB`` picks the database file; migrations are by hand —
 this app's state is cheap to rebuild (delete the file and resync).
 
 Hierarchy: projects (grid on the main page) → columns (each project's own
-kanban, default Todo/Doing/Done) → tasks.
+kanban, default Triage/Todo/Staffed/In PR/Done) → tasks.
 
 Invariant: sync writes repo metadata columns and may auto-create a project
 card for an unassigned repo — but it never overwrites a user-set
@@ -22,7 +22,16 @@ DB_PATH = Path(os.environ.get("ATLAS_DB", BASE_DIR / "atlas.sqlite"))
 
 PROJECT_STATUSES = ("idea", "backlog", "active", "paused", "done")
 
-DEFAULT_COLUMNS = (("Todo", 0), ("Doing", 0), ("Done", 1))  # (name, is_done)
+# The agent-loop lifecycle: Triage = findings land / failed attempts bounce back,
+# Staffed = drag here to hand to the loop, In PR / Done = loop-managed.
+# Todo stays the human backlog (loop pickup is opt-in per task).
+DEFAULT_COLUMNS = (
+    ("Triage", 0),
+    ("Todo", 0),
+    ("Staffed", 0),
+    ("In PR", 0),
+    ("Done", 1),
+)  # (name, is_done)
 
 _TASKS_DDL = """
 CREATE TABLE IF NOT EXISTS tasks (
@@ -115,7 +124,10 @@ def _migrate() -> None:
             conn.execute(_TASKS_DDL)
             for t in old:
                 _ensure_default_columns_tx(t["project_id"])
-                target = {"todo": "Todo", "doing": "Doing", "done": "Done"}[t["status"]]
+                # v0's "doing" has no column in the loop-era defaults; Todo is the
+                # human backlog, so migrated WIP lands there rather than Staffed
+                # (which would hand it straight to the agent loop).
+                target = {"todo": "Todo", "doing": "Todo", "done": "Done"}[t["status"]]
                 col = conn.execute(
                     "SELECT id FROM columns WHERE project_id = ? AND name = ?",
                     (t["project_id"], target),
@@ -324,9 +336,29 @@ def create_column(project_id: int, name: str) -> dict:
     return get_column(cur.lastrowid)
 
 
-def rename_column(column_id: int, name: str) -> dict | None:
+def update_column(
+    column_id: int, name: str | None = None, is_done: bool | None = None
+) -> dict | None:
+    """Marking a column done unmarks any sibling — reconcile picks *the* done
+    column per project, so two would make merge targeting ambiguous."""
     with conn:
-        conn.execute("UPDATE columns SET name = ? WHERE id = ?", (name, column_id))
+        col = conn.execute(
+            "SELECT * FROM columns WHERE id = ?", (column_id,)
+        ).fetchone()
+        if col is None:
+            return None
+        if name is not None:
+            conn.execute("UPDATE columns SET name = ? WHERE id = ?", (name, column_id))
+        if is_done is not None:
+            if is_done:
+                conn.execute(
+                    "UPDATE columns SET is_done = 0 WHERE project_id = ?",
+                    (col["project_id"],),
+                )
+            conn.execute(
+                "UPDATE columns SET is_done = ? WHERE id = ?",
+                (int(is_done), column_id),
+            )
     return get_column(column_id)
 
 
