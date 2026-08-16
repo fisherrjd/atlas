@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import urllib.error
 import urllib.request
 from contextlib import asynccontextmanager
@@ -9,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -306,6 +307,10 @@ ORC_API = os.environ.get("ORC_API", "http://10.42.0.1:3050")
 _HEIMDALL_ROUTES = {"health", "pulses", "tickets", "suppressions", "personas"}
 
 
+_HEIMDALL_ASSETS = {"avatars": "image/png", "sounds": "audio/wav"}
+_HEIMDALL_ASSET_NAME = re.compile(r"^[a-z0-9-]+\.(png|wav)$")
+
+
 @app.get("/api/heimdall/{route}")
 async def heimdall(route: str, limit: int = 50):
     if route not in _HEIMDALL_ROUTES:
@@ -319,6 +324,30 @@ async def heimdall(route: str, limit: int = 50):
         return await asyncio.to_thread(fetch)
     except (urllib.error.URLError, TimeoutError) as e:
         raise HTTPException(502, detail=f"heimdall api unreachable: {e}")
+
+
+@app.get("/api/heimdall/{kind}/{filename}")
+async def heimdall_asset(kind: str, filename: str):
+    # persona avatars / event chimes, streamed from the orchestrator's asset
+    # library — same GET-only posture, orc validates the basename again upstream
+    if kind not in _HEIMDALL_ASSETS or not _HEIMDALL_ASSET_NAME.match(filename):
+        raise HTTPException(404, detail="unknown heimdall asset")
+
+    def fetch():
+        with urllib.request.urlopen(f"{ORC_API}/api/{kind}/{filename}", timeout=5) as r:
+            return r.read()
+
+    try:
+        data = await asyncio.to_thread(fetch)
+    except urllib.error.HTTPError as e:
+        raise HTTPException(e.code, detail="asset not found")
+    except (urllib.error.URLError, TimeoutError) as e:
+        raise HTTPException(502, detail=f"heimdall api unreachable: {e}")
+    return Response(
+        content=data,
+        media_type=_HEIMDALL_ASSETS[kind],
+        headers={"Cache-Control": "max-age=86400"},
+    )
 
 
 # ── Sync ─────────────────────────────────────────────────────────────────────
