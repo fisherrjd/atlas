@@ -145,7 +145,7 @@ const STATE_CLASS: Record<string, string> = {
       <div class="flex items-center gap-2">
         <img
           v-if="headerAvatarOk"
-          src="/api/heimdall/avatars/heimdall.png"
+          :src="'/api/heimdall/avatars/heimdall.png'"
           alt=""
           class="size-8 rounded-md shadow-sm [image-rendering:pixelated]"
           @error="headerAvatarOk = false"
