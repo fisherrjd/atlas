@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { CompassIcon, RefreshCwIcon } from '@lucide/vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
-import ThemePicker from '@/components/ThemePicker.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 import { Button } from '@/components/ui/button'
 import { Toaster } from '@/components/ui/sonner'
@@ -36,7 +35,6 @@ function isActive(to: string) {
             v-for="link in [
               { to: '/', label: 'Projects' },
               { to: '/heimdall', label: 'Heimdall' },
-              { to: '/styleguide', label: 'Styleguide' },
             ]"
             :key="link.to"
             :to="link.to"
@@ -55,7 +53,6 @@ function isActive(to: string) {
             <RefreshCwIcon :class="syncing ? 'animate-spin' : ''" />
             Sync
           </Button>
-          <ThemePicker />
           <ThemeToggle />
         </div>
       </div>
