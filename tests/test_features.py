@@ -217,3 +217,54 @@ def test_heimdall_asset_proxy(client, monkeypatch):
     r = client.get("/api/heimdall/avatars/..%2Fsecret.png")
     assert "image/png" not in r.headers["content-type"]
     assert len(calls) == n
+
+
+def test_heimdall_write_proxy(client, monkeypatch):
+    import io
+    import json as jsonlib
+    import urllib.request
+
+    from atlas import main as main_mod
+
+    class FakeResp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(main_mod, "ORC_API_TOKEN", "sekrit")
+    captured = {}
+
+    def fake_urlopen(req, timeout=None):
+        captured["url"] = req.full_url
+        captured["auth"] = req.get_header("Authorization")
+        captured["body"] = jsonlib.loads(req.data)
+        return FakeResp(jsonlib.dumps({"detail": "ok", "git_warning": None}).encode())
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    r = client.post("/api/heimdall/personas/implementer", json={"model": "opus"})
+    assert r.status_code == 200 and r.json()["detail"] == "ok"
+    assert captured["auth"] == "Bearer sekrit"
+    assert captured["url"].endswith("/api/personas/implementer")
+    assert captured["body"] == {"model": "opus"}
+
+    # upstream refusal passes through with its detail
+    def refuse(req, timeout=None):
+        raise urllib.error.HTTPError(
+            req.full_url, 403, "forbidden", {}, io.BytesIO(b'{"detail": "jail"}')
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", refuse)
+    r = client.post("/api/heimdall/personas/implementer", json={"tools": "Bash(*)"})
+    assert r.status_code == 403 and r.json()["detail"] == "jail"
+
+    assert client.post("/api/heimdall/personas/Bad Name", json={}).status_code == 404
+
+
+def test_heimdall_write_disabled_without_token(client, monkeypatch):
+    from atlas import main as main_mod
+
+    monkeypatch.setattr(main_mod, "ORC_API_TOKEN", "")
+    assert client.post("/api/heimdall/personas/x", json={}).status_code == 503

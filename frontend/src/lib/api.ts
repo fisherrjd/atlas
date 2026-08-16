@@ -105,4 +105,20 @@ export const api = {
     route: 'health' | 'pulses' | 'tickets' | 'suppressions' | 'personas',
     limit = 50,
   ) => req<T>(`/api/heimdall/${route}?limit=${limit}`),
+  heimdallAvatars: () =>
+    req<{ file: string; assigned_to: string | null }[]>('/api/heimdall/avatars'),
+  heimdallJob: (id: string) =>
+    req<{ status: string; detail: string }>(`/api/heimdall/agent-jobs/${id}`),
+  heimdallEditPersona: (name: string, patch: Record<string, unknown>) =>
+    req<{ detail: string; git_warning: string | null }>(`/api/heimdall/personas/${name}`, {
+      method: 'POST',
+      body: JSON.stringify(patch),
+    }),
+  heimdallCreatePersona: (body: {
+    name: string
+    role: string
+    purpose: string
+    model?: string
+    effort?: string
+  }) => req<{ job: string }>('/api/heimdall/personas', { method: 'POST', body: JSON.stringify(body) }),
 }

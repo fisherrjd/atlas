@@ -1,15 +1,42 @@
 <script setup lang="ts">
-import { EyeIcon, RefreshCwIcon, Volume2Icon, VolumeXIcon } from '@lucide/vue'
+import {
+  EyeIcon,
+  LockIcon,
+  PencilIcon,
+  PlusIcon,
+  RefreshCwIcon,
+  Volume2Icon,
+  VolumeXIcon,
+} from '@lucide/vue'
 import { onMounted, onUnmounted, ref } from 'vue'
 import { toast } from 'vue-sonner'
 import EmptyState from '@/components/states/EmptyState.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Textarea } from '@/components/ui/textarea'
 import { api, ApiError } from '@/lib/api'
 
-// read-only mirror of the orchestrator's state — traits are edited in its repo
+// live mirror of the orchestrator's state; persona edits round-trip through
+// orc's authenticated write API and land as commits in its repo
 interface Pulse {
   id: number
   pulse_type: string
@@ -51,7 +78,11 @@ interface Persona {
   tools: string[]
   role: string
   avatar: string | null
+  prompt: string
 }
+
+const MODELS = ['haiku', 'sonnet', 'opus']
+const EFFORTS = ['low', 'medium', 'high']
 
 const loading = ref(true)
 const unreachable = ref(false)
@@ -120,6 +151,95 @@ onMounted(() => {
 })
 onUnmounted(() => clearInterval(pollTimer))
 
+// ── persona editor ──────────────────────────────────────────────────────────
+
+const editOpen = ref(false)
+const editing = ref<Persona | null>(null)
+const editForm = ref({
+  description: '',
+  prompt: '',
+  model: 'sonnet',
+  effort: 'medium',
+  timeout_s: 600,
+  avatar: '',
+})
+const avatarPool = ref<{ file: string; assigned_to: string | null }[]>([])
+const saving = ref(false)
+
+async function openEdit(p: Persona) {
+  editing.value = p
+  editForm.value = {
+    description: p.description,
+    prompt: p.prompt,
+    model: p.model,
+    effort: p.effort,
+    timeout_s: p.timeout_s,
+    avatar: p.avatar ?? '',
+  }
+  editOpen.value = true
+  avatarPool.value = await api.heimdallAvatars().catch(() => [])
+}
+
+async function saveEdit() {
+  if (!editing.value) return
+  saving.value = true
+  const patch: Record<string, unknown> = {
+    description: editForm.value.description,
+    model: editForm.value.model,
+    effort: editForm.value.effort,
+    timeout_s: Number(editForm.value.timeout_s),
+  }
+  if (editForm.value.avatar) patch.avatar = editForm.value.avatar
+  if (editForm.value.prompt.trim()) patch.prompt = editForm.value.prompt
+  try {
+    const r = await api.heimdallEditPersona(editing.value.name, patch)
+    toast.success(r.git_warning ? `Saved — ${r.git_warning}` : 'Saved and committed')
+    editOpen.value = false
+    await load(true)
+  } catch (e) {
+    if (e instanceof ApiError) toast.error(e.message)
+  } finally {
+    saving.value = false
+  }
+}
+
+const createOpen = ref(false)
+const creating = ref(false)
+const createForm = ref({
+  name: '',
+  role: 'scanner',
+  purpose: '',
+  model: 'sonnet',
+  effort: 'medium',
+})
+
+async function createAgent() {
+  creating.value = true
+  try {
+    const { job } = await api.heimdallCreatePersona({ ...createForm.value })
+    toast.info('Creator persona is drafting — this takes a minute or two')
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 2500))
+      const j = await api.heimdallJob(job)
+      if (j.status === 'done') {
+        toast.success(j.detail)
+        createOpen.value = false
+        createForm.value = { name: '', role: 'scanner', purpose: '', model: 'sonnet', effort: 'medium' }
+        await load(true)
+        break
+      }
+      if (j.status === 'error') {
+        toast.error(j.detail)
+        break
+      }
+    }
+  } catch (e) {
+    if (e instanceof ApiError) toast.error(e.message)
+  } finally {
+    creating.value = false
+  }
+}
+
 const STATUS_CLASS: Record<string, string> = {
   ok: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
   clean: 'bg-sky-500/15 text-sky-600 dark:text-sky-400',
@@ -168,6 +288,10 @@ const STATE_CLASS: Record<string, string> = {
         </div>
       </div>
       <div class="ml-auto flex items-center gap-1">
+        <Button variant="outline" size="sm" @click="createOpen = true">
+          <PlusIcon />
+          New agent
+        </Button>
         <Button
           variant="ghost"
           size="sm"
@@ -218,6 +342,15 @@ const STATE_CLASS: Record<string, string> = {
               <span class="ml-auto text-[10px] text-muted-foreground">
                 {{ Math.round(p.timeout_s / 60) }}m cap
               </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="size-6"
+                title="Edit persona"
+                @click="openEdit(p)"
+              >
+                <PencilIcon class="size-3" />
+              </Button>
             </div>
             <p class="line-clamp-2 text-xs text-muted-foreground">{{ p.description }}</p>
             <div class="flex flex-wrap gap-1">
@@ -313,5 +446,165 @@ const STATE_CLASS: Record<string, string> = {
         </div>
       </section>
     </template>
+
+    <!-- Edit persona -->
+    <Dialog v-model:open="editOpen">
+      <DialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Edit {{ editing?.name }}</DialogTitle>
+          <DialogDescription>
+            Saved edits commit straight to the orchestrator repo and apply next pulse.
+          </DialogDescription>
+        </DialogHeader>
+        <div class="space-y-4">
+          <div class="space-y-2">
+            <Label>Avatar</Label>
+            <div class="flex flex-wrap gap-2">
+              <button
+                v-for="a in avatarPool"
+                :key="a.file"
+                type="button"
+                class="relative rounded border-2 p-0.5"
+                :class="editForm.avatar === a.file ? 'border-primary' : 'border-transparent'"
+                :title="a.assigned_to ? `used by ${a.assigned_to}` : a.file"
+                @click="editForm.avatar = a.file"
+              >
+                <img
+                  :src="`/api/heimdall/avatars/${a.file}`"
+                  alt=""
+                  class="size-10 rounded [image-rendering:pixelated]"
+                  :class="a.assigned_to && a.assigned_to !== editing?.name ? 'opacity-40' : ''"
+                />
+              </button>
+            </div>
+          </div>
+          <div class="space-y-2">
+            <Label for="edit-desc">Description</Label>
+            <Input id="edit-desc" v-model="editForm.description" />
+          </div>
+          <div class="grid grid-cols-3 gap-3">
+            <div class="space-y-2">
+              <Label>Model</Label>
+              <Select v-model="editForm.model">
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="m in MODELS" :key="m" :value="m">{{ m }}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div class="space-y-2">
+              <Label>Effort</Label>
+              <Select v-model="editForm.effort">
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="e in EFFORTS" :key="e" :value="e">{{ e }}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div class="space-y-2">
+              <Label for="edit-timeout">Timeout (s)</Label>
+              <Input id="edit-timeout" v-model="editForm.timeout_s" type="number" min="60" />
+            </div>
+          </div>
+          <div class="space-y-2">
+            <Label for="edit-rules">Standing rules</Label>
+            <Textarea id="edit-rules" v-model="editForm.prompt" rows="10" class="font-mono text-xs" />
+          </div>
+          <div class="space-y-1">
+            <Label class="flex items-center gap-1 text-muted-foreground">
+              <LockIcon class="size-3" /> Tools & role (git-only — the jail never changes here)
+            </Label>
+            <div class="flex flex-wrap gap-1">
+              <Badge variant="outline" class="text-[9px]">role: {{ editing?.role }}</Badge>
+              <Badge
+                v-for="t in editing?.tools ?? []"
+                :key="t"
+                variant="outline"
+                class="text-[9px] font-mono"
+              >
+                {{ t }}
+              </Badge>
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" @click="editOpen = false">Cancel</Button>
+          <Button :disabled="saving" @click="saveEdit">
+            {{ saving ? 'Saving…' : 'Save & commit' }}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- New agent -->
+    <Dialog v-model:open="createOpen">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>New agent</DialogTitle>
+          <DialogDescription>
+            The creator persona drafts its rules and identity page; the runner writes the
+            files and assigns an avatar. Takes a minute or two.
+          </DialogDescription>
+        </DialogHeader>
+        <div class="space-y-4">
+          <div class="space-y-2">
+            <Label for="new-name">Name</Label>
+            <Input id="new-name" v-model="createForm.name" placeholder="flake-hunter" />
+          </div>
+          <div class="grid grid-cols-3 gap-3">
+            <div class="space-y-2">
+              <Label>Role</Label>
+              <Select v-model="createForm.role">
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="scanner">scanner</SelectItem>
+                  <SelectItem value="implementer">implementer</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div class="space-y-2">
+              <Label>Model</Label>
+              <Select v-model="createForm.model">
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="m in MODELS" :key="m" :value="m">{{ m }}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div class="space-y-2">
+              <Label>Effort</Label>
+              <Select v-model="createForm.effort">
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="e in EFFORTS" :key="e" :value="e">{{ e }}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div class="space-y-2">
+            <Label for="new-purpose">Purpose</Label>
+            <Textarea
+              id="new-purpose"
+              v-model="createForm.purpose"
+              rows="3"
+              placeholder="one or two sentences: what is this agent for?"
+            />
+          </div>
+          <p v-if="createForm.role === 'implementer'" class="text-xs text-amber-600 dark:text-amber-400">
+            Implementers are routable: any Todo task tagged with this agent's name will
+            execute under its rules. Read the generated file before first routing to it.
+          </p>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" @click="createOpen = false">Cancel</Button>
+          <Button
+            :disabled="creating || !createForm.name.trim() || !createForm.purpose.trim()"
+            @click="createAgent"
+          >
+            {{ creating ? 'Drafting…' : 'Create' }}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>

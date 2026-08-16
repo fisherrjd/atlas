@@ -297,14 +297,17 @@ async def delete_task(task_id: int) -> dict:
     return {"detail": "deleted"}
 
 
-# ── Heimdall (read-only proxy to the orchestrator's display API) ─────────────
+# ── Heimdall (proxy to the orchestrator's display/editor API) ────────────────
 #
 # The orchestrator runs on the host; pods reach it via the flannel gateway
-# (10.42.0.1), same pattern as postgres. GET-only allowlist — this proxy can
-# display agent state but never mutate it.
+# (10.42.0.1), same pattern as postgres. GETs are an open allowlist; persona
+# writes forward with a shared bearer token (ORC_API_TOKEN) that never reaches
+# the browser — atlas's own auth gates who can call them.
 
 ORC_API = os.environ.get("ORC_API", "http://10.42.0.1:3050")
-_HEIMDALL_ROUTES = {"health", "pulses", "tickets", "suppressions", "personas"}
+ORC_API_TOKEN = os.environ.get("ORC_API_TOKEN", "")
+_HEIMDALL_ROUTES = {"health", "pulses", "tickets", "suppressions", "personas", "avatars"}
+_HEIMDALL_NAME = re.compile(r"^[a-z0-9-]+$")
 
 
 _HEIMDALL_ASSETS = {"avatars": "image/png", "sounds": "audio/wav"}
@@ -330,6 +333,20 @@ async def heimdall(route: str, limit: int = 50):
 async def heimdall_asset(kind: str, filename: str):
     # persona avatars / event chimes, streamed from the orchestrator's asset
     # library — same GET-only posture, orc validates the basename again upstream
+    if kind == "agent-jobs" and _HEIMDALL_NAME.match(filename):
+
+        def fetch_job():
+            with urllib.request.urlopen(
+                f"{ORC_API}/api/agent-jobs/{filename}", timeout=5
+            ) as r:
+                return json.loads(r.read())
+
+        try:
+            return await asyncio.to_thread(fetch_job)
+        except urllib.error.HTTPError as e:
+            raise HTTPException(e.code, detail="unknown job")
+        except (urllib.error.URLError, TimeoutError) as e:
+            raise HTTPException(502, detail=f"heimdall api unreachable: {e}")
     if kind not in _HEIMDALL_ASSETS or not _HEIMDALL_ASSET_NAME.match(filename):
         raise HTTPException(404, detail="unknown heimdall asset")
 
@@ -348,6 +365,47 @@ async def heimdall_asset(kind: str, filename: str):
         media_type=_HEIMDALL_ASSETS[kind],
         headers={"Cache-Control": "max-age=86400"},
     )
+
+
+def _heimdall_post(path: str, payload: dict):
+    req = urllib.request.Request(
+        f"{ORC_API}/api/{path}",
+        data=json.dumps(payload).encode(),
+        headers={
+            "Authorization": f"Bearer {ORC_API_TOKEN}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read())
+
+
+async def _heimdall_write(path: str, payload: dict):
+    if not ORC_API_TOKEN:
+        raise HTTPException(503, detail="ORC_API_TOKEN not configured")
+    try:
+        return await asyncio.to_thread(_heimdall_post, path, payload)
+    except urllib.error.HTTPError as e:
+        try:
+            detail = json.loads(e.read()).get("detail", "write refused")
+        except Exception:
+            detail = "write refused"
+        raise HTTPException(e.code, detail=detail)
+    except (urllib.error.URLError, TimeoutError) as e:
+        raise HTTPException(502, detail=f"heimdall api unreachable: {e}")
+
+
+@app.post("/api/heimdall/personas")
+async def heimdall_create_persona(payload: dict):
+    return await _heimdall_write("personas", payload)
+
+
+@app.post("/api/heimdall/personas/{name}")
+async def heimdall_edit_persona(name: str, payload: dict):
+    if not _HEIMDALL_NAME.match(name):
+        raise HTTPException(404, detail="bad persona name")
+    return await _heimdall_write(f"personas/{name}", payload)
 
 
 # ── Sync ─────────────────────────────────────────────────────────────────────
