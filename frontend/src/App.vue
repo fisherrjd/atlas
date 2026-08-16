@@ -35,6 +35,7 @@ function isActive(to: string) {
           <RouterLink
             v-for="link in [
               { to: '/', label: 'Projects' },
+              { to: '/heimdall', label: 'Heimdall' },
               { to: '/styleguide', label: 'Styleguide' },
             ]"
             :key="link.to"
