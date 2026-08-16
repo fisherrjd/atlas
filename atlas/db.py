@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   column_id   INTEGER NOT NULL REFERENCES columns(id) ON DELETE CASCADE,
   title       TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  source      TEXT NOT NULL DEFAULT '',
   sort_order  INTEGER NOT NULL DEFAULT 0,
   created_at  TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
@@ -126,6 +128,13 @@ def _migrate() -> None:
         # every project has a kanban
         for p in conn.execute("SELECT id FROM projects").fetchall():
             _ensure_default_columns_tx(p["id"])
+    # v2: task body + filing source (agent tickets carry evidence + a persona badge)
+    task_cols = {r["name"] for r in conn.execute("PRAGMA table_info(tasks)")}
+    with conn:
+        if "description" not in task_cols:
+            conn.execute("ALTER TABLE tasks ADD COLUMN description TEXT NOT NULL DEFAULT ''")
+        if "source" not in task_cols:
+            conn.execute("ALTER TABLE tasks ADD COLUMN source TEXT NOT NULL DEFAULT ''")
 
 
 _migrate()
@@ -278,9 +287,10 @@ def board(include_archived: bool = False) -> dict:
         dict(r)
         for r in conn.execute(f"SELECT * FROM projects {where} ORDER BY status, sort_order")
     ]
+    repo_where = "" if include_archived else "AND archived = 0"
     repos_by_project: dict[int, list[dict]] = {}
     for r in conn.execute(
-        "SELECT * FROM repos WHERE project_id IS NOT NULL ORDER BY pushed_at DESC"
+        f"SELECT * FROM repos WHERE project_id IS NOT NULL {repo_where} ORDER BY pushed_at DESC"
     ):
         repos_by_project.setdefault(r["project_id"], []).append(dict(r))
     counts = {
@@ -366,8 +376,13 @@ def delete_column(column_id: int) -> bool:
 
 # ---------------------------------------------------------------- repos
 
-def list_repos(unassigned: bool = False) -> list[dict]:
-    where = "WHERE project_id IS NULL AND archived = 0" if unassigned else ""
+def list_repos(unassigned: bool = False, archived: bool = False) -> list[dict]:
+    """Archived repos exist only on the Archived tab: default responses exclude
+    them; ``archived=True`` returns only them."""
+    clauses = ["archived = 1" if archived else "archived = 0"]
+    if unassigned:
+        clauses.append("project_id IS NULL")
+    where = "WHERE " + " AND ".join(clauses)
     return [
         dict(r)
         for r in conn.execute(f"SELECT * FROM repos {where} ORDER BY pushed_at DESC")
@@ -441,23 +456,36 @@ def get_task(task_id: int) -> dict | None:
     return dict(row) if row else None
 
 
-def create_task(column_id: int, title: str) -> dict | None:
+def create_task(
+    column_id: int, title: str, description: str = "", source: str = ""
+) -> dict | None:
     if get_column(column_id) is None:
         return None
     with conn:
         cur = conn.execute(
-            "INSERT INTO tasks (column_id, title, sort_order) VALUES (?, ?, ?)",
-            (column_id, title, _next_sort_order("tasks", "column_id = ?", (column_id,))),
+            "INSERT INTO tasks (column_id, title, description, source, sort_order)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (
+                column_id,
+                title,
+                description,
+                source,
+                _next_sort_order("tasks", "column_id = ?", (column_id,)),
+            ),
         )
     return get_task(cur.lastrowid)
 
 
-def update_task(task_id: int, title: str) -> dict | None:
-    with conn:
-        conn.execute(
-            "UPDATE tasks SET title = ?, updated_at = datetime('now') WHERE id = ?",
-            (title, task_id),
-        )
+def update_task(task_id: int, fields: dict) -> dict | None:
+    # source is set at creation and immutable — it records who filed the task
+    allowed = {k: v for k, v in fields.items() if k in ("title", "description")}
+    if allowed:
+        sets = ", ".join(f"{k} = ?" for k in allowed)
+        with conn:
+            conn.execute(
+                f"UPDATE tasks SET {sets}, updated_at = datetime('now') WHERE id = ?",
+                (*allowed.values(), task_id),
+            )
     return get_task(task_id)
 
 

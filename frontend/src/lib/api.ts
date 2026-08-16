@@ -70,7 +70,13 @@ export const api = {
   deleteColumn: (id: number) =>
     req<{ detail: string }>(`/api/columns/${id}`, { method: 'DELETE' }),
 
-  repos: (unassigned = false) => req<Repo[]>(`/api/repos${unassigned ? '?unassigned=true' : ''}`),
+  repos: (unassigned = false, archived = false) => {
+    const params = new URLSearchParams()
+    if (unassigned) params.set('unassigned', 'true')
+    if (archived) params.set('archived', 'true')
+    const qs = params.toString()
+    return req<Repo[]>(`/api/repos${qs ? `?${qs}` : ''}`)
+  },
   assignRepo: (projectId: number, fullName: string) =>
     req<Project>(`/api/projects/${projectId}/repos`, {
       method: 'POST',
@@ -79,13 +85,13 @@ export const api = {
   unassignRepo: (projectId: number, fullName: string) =>
     req<{ detail: string }>(`/api/projects/${projectId}/repos/${fullName}`, { method: 'DELETE' }),
 
-  addTask: (columnId: number, title: string) =>
+  addTask: (columnId: number, title: string, description = '', source = '') =>
     req<Task>(`/api/columns/${columnId}/tasks`, {
       method: 'POST',
-      body: JSON.stringify({ title }),
+      body: JSON.stringify({ title, description, source }),
     }),
-  updateTask: (id: number, title: string) =>
-    req<Task>(`/api/tasks/${id}`, { method: 'PATCH', body: JSON.stringify({ title }) }),
+  updateTask: (id: number, patch: { title?: string; description?: string }) =>
+    req<Task>(`/api/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   moveTask: (id: number, columnId: number, index: number) =>
     req<Task>(`/api/tasks/${id}/move`, {
       method: 'PATCH',
