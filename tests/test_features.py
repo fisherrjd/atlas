@@ -140,3 +140,42 @@ def test_board_excludes_archived_repos_from_live_projects(client):
     board_all = client.get("/api/board?include_archived=true").json()
     proj_all = next(x for x in board_all["projects"] if x["id"] == p["id"])
     assert {r["full_name"] for r in proj_all["repos"]} == {"o/live", "o/dead"}
+# ── heimdall read-only proxy ───────────────────────────────────────────────────
+
+def test_heimdall_proxy_allowlist_and_upstream(client, monkeypatch):
+    import io
+    import json as jsonlib
+    import urllib.request
+
+    class FakeResp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    calls = []
+
+    def fake_urlopen(url, timeout=None):
+        calls.append(url)
+        return FakeResp(jsonlib.dumps([{"id": 1, "pulse_type": "log-scan"}]).encode())
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    r = client.get("/api/heimdall/pulses?limit=5")
+    assert r.status_code == 200 and r.json()[0]["pulse_type"] == "log-scan"
+    assert calls == ["http://10.42.0.1:3050/api/pulses?limit=5"]
+
+    assert client.get("/api/heimdall/nope").status_code == 404
+
+
+def test_heimdall_proxy_502_when_unreachable(client, monkeypatch):
+    import urllib.error
+    import urllib.request
+
+    def fail(url, timeout=None):
+        raise urllib.error.URLError("connection refused")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fail)
+    r = client.get("/api/heimdall/health")
+    assert r.status_code == 502

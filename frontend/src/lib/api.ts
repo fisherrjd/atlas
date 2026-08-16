@@ -100,4 +100,9 @@ export const api = {
   deleteTask: (id: number) => req<{ detail: string }>(`/api/tasks/${id}`, { method: 'DELETE' }),
 
   sync: () => req<SyncResult>('/api/sync', { method: 'POST' }),
+
+  heimdall: <T>(
+    route: 'health' | 'pulses' | 'tickets' | 'suppressions' | 'personas',
+    limit = 50,
+  ) => req<T>(`/api/heimdall/${route}?limit=${limit}`),
 }
