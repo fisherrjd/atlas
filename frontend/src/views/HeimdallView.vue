@@ -78,6 +78,7 @@ interface Persona {
   tools: string[]
   role: string
   avatar: string | null
+  character: string | null
   prompt: string
 }
 
@@ -162,6 +163,7 @@ const editForm = ref({
   effort: 'medium',
   timeout_s: 600,
   avatar: '',
+  character: '',
 })
 const avatarPool = ref<{ file: string; assigned_to: string | null }[]>([])
 const saving = ref(false)
@@ -175,6 +177,7 @@ async function openEdit(p: Persona) {
     effort: p.effort,
     timeout_s: p.timeout_s,
     avatar: p.avatar ?? '',
+    character: p.character ?? '',
   }
   editOpen.value = true
   avatarPool.value = await api.heimdallAvatars().catch(() => [])
@@ -190,6 +193,7 @@ async function saveEdit() {
     timeout_s: Number(editForm.value.timeout_s),
   }
   if (editForm.value.avatar) patch.avatar = editForm.value.avatar
+  patch.character = editForm.value.character.trim() // empty clears the display name
   if (editForm.value.prompt.trim()) patch.prompt = editForm.value.prompt
   try {
     const r = await api.heimdallEditPersona(editing.value.name, patch)
@@ -265,7 +269,7 @@ const STATE_CLASS: Record<string, string> = {
       <div class="flex items-center gap-2">
         <img
           v-if="headerAvatarOk"
-          :src="'/api/heimdall/avatars/heimdall.png'"
+          :src="'/api/heimdall/avatars/wizard.png'"
           alt=""
           class="size-8 rounded-md shadow-sm [image-rendering:pixelated]"
           @error="headerAvatarOk = false"
@@ -336,7 +340,10 @@ const STATE_CLASS: Record<string, string> = {
                 alt=""
                 class="size-7 rounded [image-rendering:pixelated]"
               />
-              <span class="text-sm font-medium">{{ p.name }}</span>
+              <div class="flex flex-col leading-tight">
+                <span class="text-sm font-medium">{{ p.character || p.name }}</span>
+                <span v-if="p.character" class="text-[10px] text-muted-foreground">{{ p.name }}</span>
+              </div>
               <Badge variant="secondary" class="text-[10px]">{{ p.model }}</Badge>
               <Badge variant="outline" class="text-[10px]">{{ p.effort }}</Badge>
               <span class="ml-auto text-[10px] text-muted-foreground">
@@ -477,6 +484,13 @@ const STATE_CLASS: Record<string, string> = {
                 />
               </button>
             </div>
+          </div>
+          <div class="space-y-2">
+            <Label for="edit-character">Character</Label>
+            <Input id="edit-character" v-model="editForm.character" placeholder="Knight" />
+            <p class="text-[10px] text-muted-foreground">
+              Display name on the board — the id ({{ editing?.name }}) never changes
+            </p>
           </div>
           <div class="space-y-2">
             <Label for="edit-desc">Description</Label>
