@@ -11,6 +11,11 @@ const router = createRouter({
       component: () => import('./views/ProjectView.vue'),
     },
     {
+      path: '/heimdall',
+      name: 'heimdall',
+      component: () => import('./views/HeimdallView.vue'),
+    },
+    {
       path: '/styleguide',
       name: 'styleguide',
       component: () => import('./views/styleguide/StyleguideView.vue'),

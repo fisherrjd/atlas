@@ -1,6 +1,9 @@
 import asyncio
+import json
 import logging
 import os
+import urllib.error
+import urllib.request
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -291,6 +294,31 @@ async def delete_task(task_id: int) -> dict:
     if not db.delete_task(task_id):
         raise HTTPException(404, detail="task not found")
     return {"detail": "deleted"}
+
+
+# ── Heimdall (read-only proxy to the orchestrator's display API) ─────────────
+#
+# The orchestrator runs on the host; pods reach it via the flannel gateway
+# (10.42.0.1), same pattern as postgres. GET-only allowlist — this proxy can
+# display agent state but never mutate it.
+
+ORC_API = os.environ.get("ORC_API", "http://10.42.0.1:3050")
+_HEIMDALL_ROUTES = {"health", "pulses", "tickets", "suppressions", "personas"}
+
+
+@app.get("/api/heimdall/{route}")
+async def heimdall(route: str, limit: int = 50):
+    if route not in _HEIMDALL_ROUTES:
+        raise HTTPException(404, detail="unknown heimdall route")
+
+    def fetch():
+        with urllib.request.urlopen(f"{ORC_API}/api/{route}?limit={limit}", timeout=5) as r:
+            return json.loads(r.read())
+
+    try:
+        return await asyncio.to_thread(fetch)
+    except (urllib.error.URLError, TimeoutError) as e:
+        raise HTTPException(502, detail=f"heimdall api unreachable: {e}")
 
 
 # ── Sync ─────────────────────────────────────────────────────────────────────
