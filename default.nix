@@ -20,7 +20,7 @@ let
       jfmt
       nixup
     ];
-    bun = [ bun ];
+    bun = [ bun nodejs ];
     uv = [ uv uvEnv ];
     scripts = pkgs.lib.attrsets.attrValues scripts;
   };
@@ -80,7 +80,7 @@ let
       name = "check";
       description = "frontend typecheck + backend tests";
       script = ''
-        (cd frontend && { [ -d node_modules ] || bun install; } && bun run typecheck)
+        (cd frontend && { [ -d node_modules ] || bun install; } && node node_modules/vue-tsc/bin/vue-tsc.js -b)
         pytest
       '';
     };
