@@ -87,6 +87,11 @@ class NameReq(BaseModel):
     name: str = Field(min_length=1)
 
 
+class UpdateColumnReq(BaseModel):
+    name: str | None = Field(default=None, min_length=1)
+    is_done: bool | None = None
+
+
 class MoveColumnReq(BaseModel):
     index: int = Field(ge=0)
 
@@ -210,8 +215,8 @@ async def create_column(project_id: int, req: NameReq) -> dict:
 
 
 @app.patch("/api/columns/{column_id}")
-async def rename_column(column_id: int, req: NameReq) -> dict:
-    column = db.rename_column(column_id, req.name)
+async def update_column(column_id: int, req: UpdateColumnReq) -> dict:
+    column = db.update_column(column_id, name=req.name, is_done=req.is_done)
     if column is None:
         raise HTTPException(404, detail="column not found")
     return column

@@ -14,8 +14,8 @@ def test_create_project_defaults():
     assert p["sort_order"] == 0
     assert p["notes"] == ""
     assert p["repos"] == []
-    assert [c["name"] for c in p["columns"]] == ["Todo", "Doing", "Done"]
-    assert [c["is_done"] for c in p["columns"]] == [0, 0, 1]
+    assert [c["name"] for c in p["columns"]] == ["Triage", "Todo", "Staffed", "In PR", "Done"]
+    assert [c["is_done"] for c in p["columns"]] == [0, 0, 0, 0, 1]
 
 
 def test_new_projects_append_within_status():
@@ -32,13 +32,13 @@ def test_set_project_status():
 
 def test_task_move_reindexes_both_columns():
     p = db.create_project("p")
-    todo, doing = col(p, "Todo"), col(p, "Doing")
+    todo, staffed = col(p, "Todo"), col(p, "Staffed")
     t1 = db.create_task(todo["id"], "one")
     t2 = db.create_task(todo["id"], "two")
     t3 = db.create_task(todo["id"], "three")
 
-    moved = db.move_task(t2["id"], doing["id"], 0)
-    assert moved["column_id"] == doing["id"] and moved["sort_order"] == 0
+    moved = db.move_task(t2["id"], staffed["id"], 0)
+    assert moved["column_id"] == staffed["id"] and moved["sort_order"] == 0
 
     remaining = [
         (r["id"], r["sort_order"])
@@ -76,16 +76,31 @@ def test_cross_project_task_move_rejected():
 def test_column_lifecycle():
     p = db.create_project("p")
     review = db.create_column(p["id"], "Review")
-    assert review["sort_order"] == 3
+    assert review["sort_order"] == 5
 
     db.move_column(review["id"], 1)
     fresh = db.get_project(p["id"])
-    assert [c["name"] for c in fresh["columns"]] == ["Todo", "Review", "Doing", "Done"]
+    assert [c["name"] for c in fresh["columns"]] == [
+        "Triage", "Review", "Todo", "Staffed", "In PR", "Done",
+    ]
 
-    db.rename_column(review["id"], "In review")
+    db.update_column(review["id"], name="In review")
     assert db.get_column(review["id"])["name"] == "In review"
 
     assert db.delete_column(review["id"])
+
+
+def test_update_column_is_done_moves_the_flag():
+    p = db.create_project("p")
+    done, staffed = col(p, "Done"), col(p, "Staffed")
+    assert done["is_done"] == 1
+
+    db.update_column(staffed["id"], is_done=True)
+    assert db.get_column(staffed["id"])["is_done"] == 1
+    assert db.get_column(done["id"])["is_done"] == 0  # only one done column per project
+
+    db.update_column(staffed["id"], is_done=False)
+    assert db.get_column(staffed["id"])["is_done"] == 0
 
 
 def test_column_delete_guards():

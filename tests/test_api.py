@@ -21,7 +21,7 @@ def column(project: dict, name: str) -> dict:
 
 def test_project_kanban_flow(client):
     p = client.post("/api/projects", json={"name": "atlas"}).json()
-    assert [c["name"] for c in p["columns"]] == ["Todo", "Doing", "Done"]
+    assert [c["name"] for c in p["columns"]] == ["Triage", "Todo", "Staffed", "In PR", "Done"]
 
     client.patch(f"/api/projects/{p['id']}/status", json={"status": "active"})
 
@@ -35,12 +35,26 @@ def test_project_kanban_flow(client):
 
     full = client.get(f"/api/projects/{p['id']}").json()
     assert full["status"] == "active"
-    assert [c["name"] for c in full["columns"]] == ["Todo", "In review", "Doing", "Done"]
+    assert [c["name"] for c in full["columns"]] == [
+        "Triage", "In review", "Todo", "Staffed", "In PR", "Done",
+    ]
     assert column(full, "Done")["tasks"][0]["title"] == "build it"
 
     board = client.get("/api/board").json()
     active = [x for x in board["projects"] if x["status"] == "active"]
     assert active[0]["task_counts"] == {"total": 1, "done": 1}
+
+
+def test_column_is_done_patch_api(client):
+    p = client.post("/api/projects", json={"name": "p"}).json()
+    staffed, done = column(p, "Staffed"), column(p, "Done")
+
+    r = client.patch(f"/api/columns/{staffed['id']}", json={"is_done": True})
+    assert r.json()["is_done"] == 1
+
+    full = client.get(f"/api/projects/{p['id']}").json()
+    assert column(full, "Done")["is_done"] == 0  # flag moved, not duplicated
+    assert column(full, "Staffed")["name"] == "Staffed"  # name untouched
 
 
 def test_column_delete_guards_api(client):
@@ -91,7 +105,7 @@ def test_sync_creates_projects_in_idea(client, monkeypatch):
 
     # auto-created cards have a working kanban
     p = client.get(f"/api/projects/{idea[0]['id']}").json()
-    assert [c["name"] for c in p["columns"]] == ["Todo", "Doing", "Done"]
+    assert [c["name"] for c in p["columns"]] == ["Triage", "Todo", "Staffed", "In PR", "Done"]
 
 
 def test_sync_never_clobbers_user_state(client, monkeypatch):
