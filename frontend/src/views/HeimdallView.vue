@@ -271,12 +271,12 @@ const STATE_CLASS: Record<string, string> = {
           v-if="headerAvatarOk"
           :src="'/api/heimdall/avatars/wizard.png'"
           alt=""
-          class="size-8 rounded-md shadow-sm [image-rendering:pixelated]"
+          class="size-12 rounded-md shadow-sm [image-rendering:pixelated]"
           @error="headerAvatarOk = false"
         />
         <span
           v-else
-          class="grid size-8 place-items-center rounded-md bg-gradient-to-br from-primary to-primary/60 text-primary-foreground shadow-sm"
+          class="grid size-12 place-items-center rounded-md bg-gradient-to-br from-primary to-primary/60 text-primary-foreground shadow-sm"
         >
           <EyeIcon class="size-4" />
         </span>
@@ -338,7 +338,7 @@ const STATE_CLASS: Record<string, string> = {
                 v-if="p.avatar"
                 :src="`/api/heimdall/avatars/${p.avatar}`"
                 alt=""
-                class="size-7 rounded [image-rendering:pixelated]"
+                class="size-14 rounded [image-rendering:pixelated]"
               />
               <div class="flex flex-col leading-tight">
                 <span class="text-sm font-medium">{{ p.character || p.name }}</span>
@@ -479,7 +479,7 @@ const STATE_CLASS: Record<string, string> = {
                 <img
                   :src="`/api/heimdall/avatars/${a.file}`"
                   alt=""
-                  class="size-10 rounded [image-rendering:pixelated]"
+                  class="size-14 rounded [image-rendering:pixelated]"
                   :class="a.assigned_to && a.assigned_to !== editing?.name ? 'opacity-40' : ''"
                 />
               </button>
