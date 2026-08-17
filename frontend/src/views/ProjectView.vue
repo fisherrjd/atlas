@@ -7,6 +7,7 @@ import {
   ExternalLinkIcon,
   FileTextIcon,
   GripVerticalIcon,
+  MessageSquareTextIcon,
   PencilIcon,
   PlusIcon,
   Trash2Icon,
@@ -46,7 +47,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useSync } from '@/composables/useSync'
 import { api, ApiError } from '@/lib/api'
 import { daysSincePush, freshness, relativeDays } from '@/lib/activity'
-import type { Column, Project, ProjectStatus, Repo, Task } from '@/types'
+import type { Column, Project, ProjectStatus, Repo, Task, TaskComment } from '@/types'
 import { PROJECT_STATUSES, STATUS_LABELS } from '@/types'
 
 const route = useRoute()
@@ -335,6 +336,41 @@ function openTask(task: Task) {
   taskTitle.value = task.title
   taskDescription.value = task.description
   taskTab.value = task.description.trim() ? 'preview' : 'write'
+  comments.value = []
+  newComment.value = ''
+  loadComments(task.id)
+}
+
+// ── Comments (thread with the filing persona; the orc loop answers) ───────────
+
+const comments = ref<TaskComment[]>([])
+const commentsLoading = ref(false)
+const newComment = ref('')
+
+async function loadComments(taskId: number) {
+  commentsLoading.value = true
+  try {
+    comments.value = await api.taskComments(taskId)
+  } catch (e) {
+    toast.error(e instanceof ApiError ? e.message : 'Failed to load comments')
+  } finally {
+    commentsLoading.value = false
+  }
+}
+
+async function postComment() {
+  if (!taskDetail.value || !newComment.value.trim()) return
+  try {
+    const c = await api.addComment(taskDetail.value.id, 'jade', newComment.value.trim())
+    comments.value.push(c)
+    newComment.value = ''
+    for (const col of columns.value) {
+      const t = col.tasks.find((x) => x.id === c.task_id)
+      if (t) t.comment_count = (t.comment_count ?? 0) + 1
+    }
+  } catch (e) {
+    toast.error(e instanceof ApiError ? e.message : 'Failed to post comment')
+  }
 }
 
 async function saveTask() {
@@ -553,6 +589,14 @@ watch(notes, (value) => {
                     class="size-3 shrink-0 text-muted-foreground"
                     title="has details"
                   />
+                  <span
+                    v-if="task.comment_count"
+                    class="flex shrink-0 items-center gap-0.5 text-[10px] text-muted-foreground"
+                    :title="`${task.comment_count} comment${task.comment_count === 1 ? '' : 's'}`"
+                  >
+                    <MessageSquareTextIcon class="size-3" />
+                    {{ task.comment_count }}
+                  </span>
                   <Badge v-if="task.source" variant="secondary" class="shrink-0 text-[9px]">
                     {{ task.source }}
                   </Badge>
@@ -726,6 +770,29 @@ watch(notes, (value) => {
             <div v-else class="min-h-48 flex-1 overflow-y-auto rounded-md border bg-card px-4 py-3">
               <MarkdownView v-if="taskDescription.trim()" :source="taskDescription" />
               <p v-else class="text-sm text-muted-foreground">No details yet.</p>
+            </div>
+          </div>
+          <div class="shrink-0 space-y-2">
+            <Label>Comments</Label>
+            <div v-for="c in comments" :key="c.id" class="rounded-md border bg-card px-3 py-2">
+              <div class="flex items-center gap-2">
+                <Badge variant="secondary" class="text-[9px]">{{ c.author }}</Badge>
+                <span class="text-[10px] text-muted-foreground">{{ c.created_at }}</span>
+              </div>
+              <div class="mt-1.5 text-sm">
+                <MarkdownView :source="c.body" />
+              </div>
+            </div>
+            <p v-if="!comments.length && !commentsLoading" class="text-sm text-muted-foreground">
+              No comments yet — ask the filing persona a question and the loop will answer here.
+            </p>
+            <Textarea
+              v-model="newComment"
+              placeholder="Write a comment… (markdown)"
+              class="min-h-16 text-sm"
+            />
+            <div class="flex justify-end">
+              <Button size="sm" :disabled="!newComment.trim()" @click="postComment">Comment</Button>
             </div>
           </div>
         </div>

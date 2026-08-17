@@ -158,6 +158,68 @@ def test_group_repos_deletes_husks(client, monkeypatch):
     assert len(grouped["repos"]) == 2
 
 
+def test_task_comments_flow(client):
+    p = client.post("/api/projects", json={"name": "p"}).json()
+    t = client.post(
+        f"/api/columns/{column(p, 'Triage')['id']}/tasks",
+        json={"title": "finding", "source": "security-review"},
+    ).json()
+
+    assert client.get(f"/api/tasks/{t['id']}/comments").json() == []
+
+    r = client.post(
+        f"/api/tasks/{t['id']}/comments", json={"author": "jade", "body": "why warn?"}
+    )
+    assert r.status_code == 201
+    assert r.json()["author"] == "jade" and r.json()["task_id"] == t["id"]
+    client.post(
+        f"/api/tasks/{t['id']}/comments",
+        json={"author": "security-review", "body": "host-only exposure"},
+    )
+
+    thread = client.get(f"/api/tasks/{t['id']}/comments").json()
+    assert [c["author"] for c in thread] == ["jade", "security-review"]
+    assert thread[1]["body"] == "host-only exposure"
+
+    # thread size surfaces on the project payload; the bodies do not
+    full = client.get(f"/api/projects/{p['id']}").json()
+    task = column(full, "Triage")["tasks"][0]
+    assert task["comment_count"] == 2
+    assert "comments" not in task
+
+
+def test_comments_unknown_task_404(client):
+    assert client.get("/api/tasks/999/comments").status_code == 404
+    r = client.post("/api/tasks/999/comments", json={"author": "jade", "body": "x"})
+    assert r.status_code == 404
+
+
+def test_comments_deleted_with_task(client):
+    from atlas import db
+
+    p = client.post("/api/projects", json={"name": "p"}).json()
+    t = client.post(f"/api/columns/{column(p, 'Todo')['id']}/tasks", json={"title": "t"}).json()
+    client.post(f"/api/tasks/{t['id']}/comments", json={"author": "jade", "body": "hm"})
+    client.delete(f"/api/tasks/{t['id']}")
+    assert client.get(f"/api/tasks/{t['id']}/comments").status_code == 404
+    n = db.conn.execute(
+        "SELECT COUNT(*) AS n FROM task_comments WHERE task_id = ?", (t["id"],)
+    ).fetchone()["n"]
+    assert n == 0
+
+
+def test_now_view_excludes_comments(client):
+    p = client.post("/api/projects", json={"name": "p", "status": "active"}).json()
+    t = client.post(
+        f"/api/columns/{column(p, 'Staffed')['id']}/tasks", json={"title": "t"}
+    ).json()
+    client.post(f"/api/tasks/{t['id']}/comments", json={"author": "jade", "body": "secretish"})
+    now = client.get("/api/now").json()
+    task = now[0]["tasks"][0]
+    assert "comments" not in task and "comment_count" not in task
+    assert "secretish" not in str(now)
+
+
 def test_unassign_and_delete(client):
     add_repo("fisherrjd/a")
     p = client.post("/api/projects", json={"name": "keeper", "repos": ["fisherrjd/a"]}).json()

@@ -112,6 +112,11 @@ class MoveTaskReq(BaseModel):
     index: int = Field(ge=0)
 
 
+class CreateCommentReq(BaseModel):
+    author: str = Field(min_length=1)
+    body: str = Field(min_length=1)
+
+
 def _check_status(status: str) -> None:
     if status not in db.PROJECT_STATUSES:
         raise HTTPException(
@@ -300,6 +305,22 @@ async def delete_task(task_id: int) -> dict:
     if not db.delete_task(task_id):
         raise HTTPException(404, detail="task not found")
     return {"detail": "deleted"}
+
+
+@app.get("/api/tasks/{task_id}/comments")
+async def list_comments(task_id: int) -> list[dict]:
+    comments = db.list_comments(task_id)
+    if comments is None:
+        raise HTTPException(404, detail="task not found")
+    return comments
+
+
+@app.post("/api/tasks/{task_id}/comments", status_code=201)
+async def create_comment(task_id: int, req: CreateCommentReq) -> dict:
+    comment = db.add_comment(task_id, req.author, req.body)
+    if comment is None:
+        raise HTTPException(404, detail="task not found")
+    return comment
 
 
 # ── Heimdall (proxy to the orchestrator's display/editor API) ────────────────
