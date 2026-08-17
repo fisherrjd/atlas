@@ -693,7 +693,7 @@ watch(notes, (value) => {
 
     <!-- Task detail dialog -->
     <Dialog :open="taskDetail !== null" @update:open="(v) => !v && (taskDetail = null)">
-      <DialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent class="flex max-h-[90vh] flex-col sm:max-w-2xl lg:max-w-3xl">
         <DialogHeader>
           <DialogTitle class="flex items-center gap-2">
             Task
@@ -702,13 +702,13 @@ watch(notes, (value) => {
             </Badge>
           </DialogTitle>
         </DialogHeader>
-        <div class="space-y-4">
-          <div class="space-y-2">
+        <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
+          <div class="shrink-0 space-y-2">
             <Label for="task-title">Title</Label>
             <Input id="task-title" v-model="taskTitle" @keyup.enter="saveTask" />
           </div>
-          <div class="space-y-2">
-            <div class="flex items-center gap-2">
+          <div class="flex min-h-0 flex-1 flex-col space-y-2">
+            <div class="flex shrink-0 items-center gap-2">
               <Label>Details</Label>
               <Tabs v-model="taskTab" class="ml-auto">
                 <TabsList class="h-7">
@@ -721,9 +721,9 @@ watch(notes, (value) => {
               v-if="taskTab === 'write'"
               v-model="taskDescription"
               placeholder="Evidence, acceptance criteria, links… (markdown)"
-              class="min-h-48 font-mono text-xs"
+              class="min-h-48 flex-1 font-mono text-xs"
             />
-            <div v-else class="min-h-48 rounded-md border bg-card px-4 py-3">
+            <div v-else class="min-h-48 flex-1 overflow-y-auto rounded-md border bg-card px-4 py-3">
               <MarkdownView v-if="taskDescription.trim()" :source="taskDescription" />
               <p v-else class="text-sm text-muted-foreground">No details yet.</p>
             </div>
