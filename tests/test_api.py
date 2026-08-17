@@ -158,6 +158,34 @@ def test_group_repos_deletes_husks(client, monkeypatch):
     assert len(grouped["repos"]) == 2
 
 
+def test_task_agent_assignee(client):
+    p = client.post("/api/projects", json={"name": "p"}).json()
+    todo = column(p, "Todo")
+
+    t = client.post(
+        f"/api/columns/{todo['id']}/tasks", json={"title": "t", "agent": "implementer"}
+    ).json()
+    assert t["agent"] == "implementer"
+
+    # reassign, then unassign with ""
+    r = client.patch(f"/api/tasks/{t['id']}", json={"agent": "knight-2"})
+    assert r.json()["agent"] == "knight-2"
+    r = client.patch(f"/api/tasks/{t['id']}", json={"title": "renamed"})
+    assert r.json()["agent"] == "knight-2"  # untouched patch leaves it alone
+    r = client.patch(f"/api/tasks/{t['id']}", json={"agent": ""})
+    assert r.json()["agent"] == ""
+
+    # default empty + survives moves
+    t2 = client.post(f"/api/columns/{todo['id']}/tasks", json={"title": "plain"}).json()
+    assert t2["agent"] == ""
+    client.patch(f"/api/tasks/{t2['id']}", json={"agent": "implementer"})
+    moved = client.patch(
+        f"/api/tasks/{t2['id']}/move",
+        json={"column_id": column(p, "Staffed")["id"], "index": 0},
+    ).json()
+    assert moved["agent"] == "implementer"
+
+
 def test_task_comments_flow(client):
     p = client.post("/api/projects", json={"name": "p"}).json()
     t = client.post(

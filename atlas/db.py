@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   title       TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   source      TEXT NOT NULL DEFAULT '',
+  agent       TEXT NOT NULL DEFAULT '',
   sort_order  INTEGER NOT NULL DEFAULT 0,
   created_at  TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
@@ -149,12 +150,15 @@ def _migrate() -> None:
         for p in conn.execute("SELECT id FROM projects").fetchall():
             _ensure_default_columns_tx(p["id"])
     # v2: task body + filing source (agent tickets carry evidence + a persona badge)
+    # v3: agent assignee — routes the orc loop without an orc-meta line
     task_cols = {r["name"] for r in conn.execute("PRAGMA table_info(tasks)")}
     with conn:
         if "description" not in task_cols:
             conn.execute("ALTER TABLE tasks ADD COLUMN description TEXT NOT NULL DEFAULT ''")
         if "source" not in task_cols:
             conn.execute("ALTER TABLE tasks ADD COLUMN source TEXT NOT NULL DEFAULT ''")
+        if "agent" not in task_cols:
+            conn.execute("ALTER TABLE tasks ADD COLUMN agent TEXT NOT NULL DEFAULT ''")
 
 
 _migrate()
@@ -506,19 +510,20 @@ def get_task(task_id: int) -> dict | None:
 
 
 def create_task(
-    column_id: int, title: str, description: str = "", source: str = ""
+    column_id: int, title: str, description: str = "", source: str = "", agent: str = ""
 ) -> dict | None:
     if get_column(column_id) is None:
         return None
     with conn:
         cur = conn.execute(
-            "INSERT INTO tasks (column_id, title, description, source, sort_order)"
-            " VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO tasks (column_id, title, description, source, agent, sort_order)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
             (
                 column_id,
                 title,
                 description,
                 source,
+                agent,
                 _next_sort_order("tasks", "column_id = ?", (column_id,)),
             ),
         )
@@ -526,8 +531,9 @@ def create_task(
 
 
 def update_task(task_id: int, fields: dict) -> dict | None:
-    # source is set at creation and immutable — it records who filed the task
-    allowed = {k: v for k, v in fields.items() if k in ("title", "description")}
+    # source is set at creation and immutable — it records who filed the task.
+    # agent is mutable: assignment is a user action, "" unassigns.
+    allowed = {k: v for k, v in fields.items() if k in ("title", "description", "agent")}
     if allowed:
         sets = ", ".join(f"{k} = ?" for k in allowed)
         with conn:
