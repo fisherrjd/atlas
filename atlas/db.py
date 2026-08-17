@@ -83,6 +83,14 @@ CREATE TABLE IF NOT EXISTS columns (
 
 {_TASKS_DDL};
 
+CREATE TABLE IF NOT EXISTS task_comments (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  author     TEXT NOT NULL,
+  body       TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -200,9 +208,18 @@ def get_project(project_id: int) -> dict | None:
             "SELECT * FROM columns WHERE project_id = ? ORDER BY sort_order", (project_id,)
         )
     ]
+    comment_counts = {
+        r["task_id"]: r["n"]
+        for r in conn.execute(
+            "SELECT tc.task_id AS task_id, COUNT(*) AS n FROM task_comments tc"
+            " JOIN tasks t ON tc.task_id = t.id JOIN columns c ON t.column_id = c.id"
+            " WHERE c.project_id = ? GROUP BY tc.task_id",
+            (project_id,),
+        )
+    }
     for col in columns:
         col["tasks"] = [
-            dict(t)
+            dict(t) | {"comment_count": comment_counts.get(t["id"], 0)}
             for t in conn.execute(
                 "SELECT * FROM tasks WHERE column_id = ? ORDER BY sort_order", (col["id"],)
             )
@@ -569,6 +586,34 @@ def delete_task(task_id: int) -> bool:
     with conn:
         cur = conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
     return cur.rowcount > 0
+
+
+# ---------------------------------------------------------------- comments
+
+def list_comments(task_id: int) -> list[dict] | None:
+    """Thread for a task, oldest first. None if the task doesn't exist."""
+    if get_task(task_id) is None:
+        return None
+    return [
+        dict(r)
+        for r in conn.execute(
+            "SELECT * FROM task_comments WHERE task_id = ? ORDER BY id", (task_id,)
+        )
+    ]
+
+
+def add_comment(task_id: int, author: str, body: str) -> dict | None:
+    if get_task(task_id) is None:
+        return None
+    with conn:
+        cur = conn.execute(
+            "INSERT INTO task_comments (task_id, author, body) VALUES (?, ?, ?)",
+            (task_id, author, body),
+        )
+    row = conn.execute(
+        "SELECT * FROM task_comments WHERE id = ?", (cur.lastrowid,)
+    ).fetchone()
+    return dict(row)
 
 
 # ---------------------------------------------------------------- meta

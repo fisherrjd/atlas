@@ -7,6 +7,7 @@ import type {
   Repo,
   SyncResult,
   Task,
+  TaskComment,
 } from '@/types'
 
 export class ApiError extends Error {
@@ -98,6 +99,13 @@ export const api = {
       body: JSON.stringify({ column_id: columnId, index }),
     }),
   deleteTask: (id: number) => req<{ detail: string }>(`/api/tasks/${id}`, { method: 'DELETE' }),
+
+  taskComments: (taskId: number) => req<TaskComment[]>(`/api/tasks/${taskId}/comments`),
+  addComment: (taskId: number, author: string, body: string) =>
+    req<TaskComment>(`/api/tasks/${taskId}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ author, body }),
+    }),
 
   sync: () => req<SyncResult>('/api/sync', { method: 'POST' }),
 

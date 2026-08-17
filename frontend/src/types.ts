@@ -22,6 +22,15 @@ export interface Task {
   sort_order: number
   created_at: string
   updated_at: string
+  comment_count?: number
+}
+
+export interface TaskComment {
+  id: number
+  task_id: number
+  author: string
+  body: string
+  created_at: string
 }
 
 export interface Column {
