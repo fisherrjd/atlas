@@ -100,11 +100,13 @@ class CreateTaskReq(BaseModel):
     title: str = Field(min_length=1)
     description: str = ""
     source: str = ""
+    agent: str = ""
 
 
 class UpdateTaskReq(BaseModel):
     title: str | None = Field(default=None, min_length=1)
     description: str | None = None
+    agent: str | None = None  # "" unassigns
 
 
 class MoveTaskReq(BaseModel):
@@ -274,7 +276,7 @@ async def unassign_repo(project_id: int, full_name: str) -> dict:
 
 @app.post("/api/columns/{column_id}/tasks", status_code=201)
 async def create_task(column_id: int, req: CreateTaskReq) -> dict:
-    task = db.create_task(column_id, req.title, req.description, req.source)
+    task = db.create_task(column_id, req.title, req.description, req.source, req.agent)
     if task is None:
         raise HTTPException(404, detail="column not found")
     return task

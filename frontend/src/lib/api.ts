@@ -91,7 +91,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ title, description, source }),
     }),
-  updateTask: (id: number, patch: { title?: string; description?: string }) =>
+  updateTask: (id: number, patch: { title?: string; description?: string; agent?: string }) =>
     req<Task>(`/api/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   moveTask: (id: number, columnId: number, index: number) =>
     req<Task>(`/api/tasks/${id}/move`, {

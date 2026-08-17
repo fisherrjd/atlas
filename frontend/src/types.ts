@@ -19,6 +19,7 @@ export interface Task {
   title: string
   description: string
   source: string
+  agent: string
   sort_order: number
   created_at: string
   updated_at: string

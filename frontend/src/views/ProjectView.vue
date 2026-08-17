@@ -3,6 +3,7 @@ import {
   ArchiveIcon,
   ArchiveRestoreIcon,
   ArrowLeftIcon,
+  BotIcon,
   CheckCircle2Icon,
   ExternalLinkIcon,
   FileTextIcon,
@@ -329,17 +330,33 @@ async function removeTask(col: Column, task: Task) {
 const taskDetail = ref<Task | null>(null)
 const taskTitle = ref('')
 const taskDescription = ref('')
+const taskAgent = ref('')
 const taskTab = ref('preview')
 
 function openTask(task: Task) {
   taskDetail.value = task
   taskTitle.value = task.title
   taskDescription.value = task.description
+  taskAgent.value = task.agent ?? ''
   taskTab.value = task.description.trim() ? 'preview' : 'write'
   comments.value = []
   newComment.value = ''
   loadComments(task.id)
 }
+
+// assignee picker: implementer personas via the heimdall proxy; when that's
+// unreachable the picker degrades to a free-text input
+const implementers = ref<{ name: string; character: string | null }[]>([])
+onMounted(async () => {
+  try {
+    const personas = await api.heimdall<{ name: string; role: string; character: string | null }[]>(
+      'personas',
+    )
+    implementers.value = personas.filter((p) => p.role === 'implementer')
+  } catch {
+    implementers.value = []
+  }
+})
 
 // ── Comments (thread with the filing persona; the orc loop answers) ───────────
 
@@ -379,6 +396,7 @@ async function saveTask() {
     const t = await api.updateTask(taskDetail.value.id, {
       title: taskTitle.value.trim(),
       description: taskDescription.value,
+      agent: taskAgent.value.trim(),
     })
     for (const c of columns.value) {
       const i = c.tasks.findIndex((x) => x.id === t.id)
@@ -600,6 +618,15 @@ watch(notes, (value) => {
                   <Badge v-if="task.source" variant="secondary" class="shrink-0 text-[9px]">
                     {{ task.source }}
                   </Badge>
+                  <Badge
+                    v-if="task.agent"
+                    variant="outline"
+                    class="shrink-0 gap-0.5 text-[9px]"
+                    :title="`assigned to ${task.agent}`"
+                  >
+                    <BotIcon class="size-2.5" />
+                    {{ task.agent }}
+                  </Badge>
                   <button
                     class="text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
                     :aria-label="`Delete ${task.title}`"
@@ -750,6 +777,35 @@ watch(notes, (value) => {
           <div class="shrink-0 space-y-2">
             <Label for="task-title">Title</Label>
             <Input id="task-title" v-model="taskTitle" @keyup.enter="saveTask" />
+          </div>
+          <div class="shrink-0 space-y-1.5">
+            <Label for="task-agent">Assignee</Label>
+            <Select
+              v-if="implementers.length"
+              :model-value="taskAgent || 'unassigned'"
+              @update:model-value="taskAgent = $event === 'unassigned' ? '' : ($event as string)"
+            >
+              <SelectTrigger id="task-agent" class="h-8 w-64 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="unassigned">unassigned</SelectItem>
+                <SelectItem v-for="p in implementers" :key="p.name" :value="p.name">
+                  {{ p.character ? `${p.character} (${p.name})` : p.name }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <Input
+              v-else
+              id="task-agent"
+              v-model="taskAgent"
+              placeholder="agent name (blank = unassigned)"
+              class="h-8 w-64 text-sm"
+            />
+            <p class="text-xs text-muted-foreground">
+              Routes the loop: an assigned task in Todo gets picked up; in Staffed the
+              assignee is the agent that executes it.
+            </p>
           </div>
           <div class="flex min-h-0 flex-1 flex-col space-y-2">
             <div class="flex shrink-0 items-center gap-2">
