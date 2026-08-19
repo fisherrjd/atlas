@@ -1,6 +1,6 @@
 [project]
 name = "atlas"
-version = "0.1.18"
+version = "0.1.19"
 description = "Personal project tracker: kanban + planning for side projects, synced from GitHub"
 readme = "README.md"
 requires-python = ">=3.13"
