@@ -11,10 +11,12 @@ const router = createRouter({
       component: () => import('./views/ProjectView.vue'),
     },
     {
-      path: '/heimdall',
-      name: 'heimdall',
-      component: () => import('./views/HeimdallView.vue'),
+      path: '/wizard',
+      name: 'wizard',
+      component: () => import('./views/WizardView.vue'),
     },
+    { path: '/heimdall', redirect: '/wizard' }, // pre-rename bookmarks
+
     {
       path: '/styleguide',
       name: 'styleguide',

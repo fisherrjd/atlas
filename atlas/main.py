@@ -325,7 +325,7 @@ async def create_comment(task_id: int, req: CreateCommentReq) -> dict:
     return comment
 
 
-# ── Heimdall (proxy to the orchestrator's display/editor API) ────────────────
+# ── Wizard (proxy to the orchestrator's display/editor API) ────────────────
 #
 # The orchestrator runs on the host; pods reach it via the flannel gateway
 # (10.42.0.1), same pattern as postgres. GETs are an open allowlist; persona
@@ -334,18 +334,18 @@ async def create_comment(task_id: int, req: CreateCommentReq) -> dict:
 
 ORC_API = os.environ.get("ORC_API", "http://10.42.0.1:3050")
 ORC_API_TOKEN = os.environ.get("ORC_API_TOKEN", "")
-_HEIMDALL_ROUTES = {"health", "pulses", "tickets", "suppressions", "personas", "avatars"}
-_HEIMDALL_NAME = re.compile(r"^[a-z0-9-]+$")
+_WIZARD_ROUTES = {"health", "pulses", "tickets", "suppressions", "personas", "avatars"}
+_WIZARD_NAME = re.compile(r"^[a-z0-9-]+$")
 
 
-_HEIMDALL_ASSETS = {"avatars": "image/png", "sounds": "audio/wav"}
-_HEIMDALL_ASSET_NAME = re.compile(r"^[a-z0-9-]+\.(png|wav)$")
+_WIZARD_ASSETS = {"avatars": "image/png", "sounds": "audio/wav"}
+_WIZARD_ASSET_NAME = re.compile(r"^[a-z0-9-]+\.(png|wav)$")
 
 
-@app.get("/api/heimdall/{route}")
-async def heimdall(route: str, limit: int = 50):
-    if route not in _HEIMDALL_ROUTES:
-        raise HTTPException(404, detail="unknown heimdall route")
+@app.get("/api/wizard/{route}")
+async def wizard(route: str, limit: int = 50):
+    if route not in _WIZARD_ROUTES:
+        raise HTTPException(404, detail="unknown wizard route")
 
     def fetch():
         with urllib.request.urlopen(f"{ORC_API}/api/{route}?limit={limit}", timeout=5) as r:
@@ -354,14 +354,14 @@ async def heimdall(route: str, limit: int = 50):
     try:
         return await asyncio.to_thread(fetch)
     except (urllib.error.URLError, TimeoutError) as e:
-        raise HTTPException(502, detail=f"heimdall api unreachable: {e}")
+        raise HTTPException(502, detail=f"wizard api unreachable: {e}")
 
 
-@app.get("/api/heimdall/{kind}/{filename}")
-async def heimdall_asset(kind: str, filename: str):
+@app.get("/api/wizard/{kind}/{filename}")
+async def wizard_asset(kind: str, filename: str):
     # persona avatars / event chimes, streamed from the orchestrator's asset
     # library — same GET-only posture, orc validates the basename again upstream
-    if kind == "agent-jobs" and _HEIMDALL_NAME.match(filename):
+    if kind == "agent-jobs" and _WIZARD_NAME.match(filename):
 
         def fetch_job():
             with urllib.request.urlopen(
@@ -374,9 +374,9 @@ async def heimdall_asset(kind: str, filename: str):
         except urllib.error.HTTPError as e:
             raise HTTPException(e.code, detail="unknown job")
         except (urllib.error.URLError, TimeoutError) as e:
-            raise HTTPException(502, detail=f"heimdall api unreachable: {e}")
-    if kind not in _HEIMDALL_ASSETS or not _HEIMDALL_ASSET_NAME.match(filename):
-        raise HTTPException(404, detail="unknown heimdall asset")
+            raise HTTPException(502, detail=f"wizard api unreachable: {e}")
+    if kind not in _WIZARD_ASSETS or not _WIZARD_ASSET_NAME.match(filename):
+        raise HTTPException(404, detail="unknown wizard asset")
 
     def fetch():
         with urllib.request.urlopen(f"{ORC_API}/api/{kind}/{filename}", timeout=5) as r:
@@ -387,15 +387,15 @@ async def heimdall_asset(kind: str, filename: str):
     except urllib.error.HTTPError as e:
         raise HTTPException(e.code, detail="asset not found")
     except (urllib.error.URLError, TimeoutError) as e:
-        raise HTTPException(502, detail=f"heimdall api unreachable: {e}")
+        raise HTTPException(502, detail=f"wizard api unreachable: {e}")
     return Response(
         content=data,
-        media_type=_HEIMDALL_ASSETS[kind],
+        media_type=_WIZARD_ASSETS[kind],
         headers={"Cache-Control": "max-age=86400"},
     )
 
 
-def _heimdall_post(path: str, payload: dict):
+def _wizard_post(path: str, payload: dict):
     req = urllib.request.Request(
         f"{ORC_API}/api/{path}",
         data=json.dumps(payload).encode(),
@@ -409,11 +409,11 @@ def _heimdall_post(path: str, payload: dict):
         return json.loads(r.read())
 
 
-async def _heimdall_write(path: str, payload: dict):
+async def _wizard_write(path: str, payload: dict):
     if not ORC_API_TOKEN:
         raise HTTPException(503, detail="ORC_API_TOKEN not configured")
     try:
-        return await asyncio.to_thread(_heimdall_post, path, payload)
+        return await asyncio.to_thread(_wizard_post, path, payload)
     except urllib.error.HTTPError as e:
         try:
             detail = json.loads(e.read()).get("detail", "write refused")
@@ -421,19 +421,19 @@ async def _heimdall_write(path: str, payload: dict):
             detail = "write refused"
         raise HTTPException(e.code, detail=detail)
     except (urllib.error.URLError, TimeoutError) as e:
-        raise HTTPException(502, detail=f"heimdall api unreachable: {e}")
+        raise HTTPException(502, detail=f"wizard api unreachable: {e}")
 
 
-@app.post("/api/heimdall/personas")
-async def heimdall_create_persona(payload: dict):
-    return await _heimdall_write("personas", payload)
+@app.post("/api/wizard/personas")
+async def wizard_create_persona(payload: dict):
+    return await _wizard_write("personas", payload)
 
 
-@app.post("/api/heimdall/personas/{name}")
-async def heimdall_edit_persona(name: str, payload: dict):
-    if not _HEIMDALL_NAME.match(name):
+@app.post("/api/wizard/personas/{name}")
+async def wizard_edit_persona(name: str, payload: dict):
+    if not _WIZARD_NAME.match(name):
         raise HTTPException(404, detail="bad persona name")
-    return await _heimdall_write(f"personas/{name}", payload)
+    return await _wizard_write(f"personas/{name}", payload)
 
 
 # ── Sync ─────────────────────────────────────────────────────────────────────
