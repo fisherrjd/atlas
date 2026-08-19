@@ -344,12 +344,12 @@ function openTask(task: Task) {
   loadComments(task.id)
 }
 
-// assignee picker: implementer personas via the heimdall proxy; when that's
+// assignee picker: implementer personas via the wizard proxy; when that's
 // unreachable the picker degrades to a free-text input
 const implementers = ref<{ name: string; character: string | null }[]>([])
 onMounted(async () => {
   try {
-    const personas = await api.heimdall<{ name: string; role: string; character: string | null }[]>(
+    const personas = await api.wizard<{ name: string; role: string; character: string | null }[]>(
       'personas',
     )
     implementers.value = personas.filter((p) => p.role === 'implementer')

@@ -87,7 +87,7 @@ const EFFORTS = ['low', 'medium', 'high']
 
 const loading = ref(true)
 const unreachable = ref(false)
-const name = ref('Heimdall')
+const name = ref('Wizard')
 const pulses = ref<Pulse[]>([])
 const tickets = ref<Ticket[]>([])
 const suppressions = ref<Suppression[]>([])
@@ -96,14 +96,14 @@ const headerAvatarOk = ref(true)
 
 // event chimes: opt-out persists; browsers reject play() before the first
 // user interaction, so failures are swallowed rather than fought
-const soundOn = ref(localStorage.getItem('heimdall-sound') !== 'off')
+const soundOn = ref(localStorage.getItem('wizard-sound') !== 'off')
 function toggleSound() {
   soundOn.value = !soundOn.value
-  localStorage.setItem('heimdall-sound', soundOn.value ? 'on' : 'off')
+  localStorage.setItem('wizard-sound', soundOn.value ? 'on' : 'off')
 }
 function playChime(sound: 'ticket' | 'pr-open' | 'fail') {
   if (!soundOn.value) return
-  new Audio(`/api/heimdall/sounds/${sound}.wav`).play().catch(() => {})
+  new Audio(`/api/wizard/sounds/${sound}.wav`).play().catch(() => {})
 }
 
 let knownTickets: Map<number, string> | null = null
@@ -124,11 +124,11 @@ async function load(silent = false) {
   unreachable.value = false
   try {
     const [health, p, t, s, per] = await Promise.all([
-      api.heimdall<{ name: string }>('health'),
-      api.heimdall<Pulse[]>('pulses'),
-      api.heimdall<Ticket[]>('tickets'),
-      api.heimdall<Suppression[]>('suppressions'),
-      api.heimdall<Persona[]>('personas'),
+      api.wizard<{ name: string }>('health'),
+      api.wizard<Pulse[]>('pulses'),
+      api.wizard<Ticket[]>('tickets'),
+      api.wizard<Suppression[]>('suppressions'),
+      api.wizard<Persona[]>('personas'),
     ])
     name.value = health.name
     pulses.value = p
@@ -180,7 +180,7 @@ async function openEdit(p: Persona) {
     character: p.character ?? '',
   }
   editOpen.value = true
-  avatarPool.value = await api.heimdallAvatars().catch(() => [])
+  avatarPool.value = await api.wizardAvatars().catch(() => [])
 }
 
 async function saveEdit() {
@@ -196,7 +196,7 @@ async function saveEdit() {
   patch.character = editForm.value.character.trim() // empty clears the display name
   if (editForm.value.prompt.trim()) patch.prompt = editForm.value.prompt
   try {
-    const r = await api.heimdallEditPersona(editing.value.name, patch)
+    const r = await api.wizardEditPersona(editing.value.name, patch)
     toast.success(r.git_warning ? `Saved — ${r.git_warning}` : 'Saved and committed')
     editOpen.value = false
     await load(true)
@@ -220,11 +220,11 @@ const createForm = ref({
 async function createAgent() {
   creating.value = true
   try {
-    const { job } = await api.heimdallCreatePersona({ ...createForm.value })
+    const { job } = await api.wizardCreatePersona({ ...createForm.value })
     toast.info('Creator persona is drafting — this takes a minute or two')
     for (;;) {
       await new Promise((r) => setTimeout(r, 2500))
-      const j = await api.heimdallJob(job)
+      const j = await api.wizardJob(job)
       if (j.status === 'done') {
         toast.success(j.detail)
         createOpen.value = false
@@ -269,7 +269,7 @@ const STATE_CLASS: Record<string, string> = {
       <div class="flex items-center gap-2">
         <img
           v-if="headerAvatarOk"
-          :src="'/api/heimdall/avatars/wizard.png'"
+          :src="'/api/wizard/avatars/wizard.png'"
           alt=""
           class="size-12 rounded-md shadow-sm [image-rendering:pixelated]"
           @error="headerAvatarOk = false"
@@ -319,7 +319,7 @@ const STATE_CLASS: Record<string, string> = {
 
     <EmptyState
       v-else-if="unreachable"
-      title="Heimdall is unreachable"
+      title="Wizard is unreachable"
       description="The orchestrator's display API (:3050 on eldo) isn't answering — is the orchestrator-api unit running?"
     >
       <template #action>
@@ -336,7 +336,7 @@ const STATE_CLASS: Record<string, string> = {
             <div class="flex items-center gap-2">
               <img
                 v-if="p.avatar"
-                :src="`/api/heimdall/avatars/${p.avatar}`"
+                :src="`/api/wizard/avatars/${p.avatar}`"
                 alt=""
                 class="size-14 rounded [image-rendering:pixelated]"
               />
@@ -477,7 +477,7 @@ const STATE_CLASS: Record<string, string> = {
                 @click="editForm.avatar = a.file"
               >
                 <img
-                  :src="`/api/heimdall/avatars/${a.file}`"
+                  :src="`/api/wizard/avatars/${a.file}`"
                   alt=""
                   class="size-14 rounded [image-rendering:pixelated]"
                   :class="a.assigned_to && a.assigned_to !== editing?.name ? 'opacity-40' : ''"

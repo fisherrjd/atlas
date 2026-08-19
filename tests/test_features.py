@@ -140,9 +140,9 @@ def test_board_excludes_archived_repos_from_live_projects(client):
     board_all = client.get("/api/board?include_archived=true").json()
     proj_all = next(x for x in board_all["projects"] if x["id"] == p["id"])
     assert {r["full_name"] for r in proj_all["repos"]} == {"o/live", "o/dead"}
-# ── heimdall read-only proxy ───────────────────────────────────────────────────
+# ── wizard read-only proxy ───────────────────────────────────────────────────
 
-def test_heimdall_proxy_allowlist_and_upstream(client, monkeypatch):
+def test_wizard_proxy_allowlist_and_upstream(client, monkeypatch):
     import io
     import json as jsonlib
     import urllib.request
@@ -162,14 +162,14 @@ def test_heimdall_proxy_allowlist_and_upstream(client, monkeypatch):
 
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
 
-    r = client.get("/api/heimdall/pulses?limit=5")
+    r = client.get("/api/wizard/pulses?limit=5")
     assert r.status_code == 200 and r.json()[0]["pulse_type"] == "log-scan"
     assert calls == ["http://10.42.0.1:3050/api/pulses?limit=5"]
 
-    assert client.get("/api/heimdall/nope").status_code == 404
+    assert client.get("/api/wizard/nope").status_code == 404
 
 
-def test_heimdall_proxy_502_when_unreachable(client, monkeypatch):
+def test_wizard_proxy_502_when_unreachable(client, monkeypatch):
     import urllib.error
     import urllib.request
 
@@ -177,11 +177,11 @@ def test_heimdall_proxy_502_when_unreachable(client, monkeypatch):
         raise urllib.error.URLError("connection refused")
 
     monkeypatch.setattr(urllib.request, "urlopen", fail)
-    r = client.get("/api/heimdall/health")
+    r = client.get("/api/wizard/health")
     assert r.status_code == 502
 
 
-def test_heimdall_asset_proxy(client, monkeypatch):
+def test_wizard_asset_proxy(client, monkeypatch):
     import io
     import urllib.request
 
@@ -200,26 +200,26 @@ def test_heimdall_asset_proxy(client, monkeypatch):
 
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
 
-    r = client.get("/api/heimdall/avatars/implementer.png")
+    r = client.get("/api/wizard/avatars/implementer.png")
     assert r.status_code == 200
     assert r.headers["content-type"] == "image/png"
     assert r.content == b"\x89PNGfake"
     assert calls == ["http://10.42.0.1:3050/api/avatars/implementer.png"]
 
-    r = client.get("/api/heimdall/sounds/ticket.wav")
+    r = client.get("/api/wizard/sounds/ticket.wav")
     assert r.status_code == 200 and r.headers["content-type"] == "audio/wav"
 
     # kind and basename are allowlisted before any upstream call
     n = len(calls)
-    assert client.get("/api/heimdall/nope/x.png").status_code == 404
-    assert client.get("/api/heimdall/avatars/x.gif").status_code == 404
+    assert client.get("/api/wizard/nope/x.png").status_code == 404
+    assert client.get("/api/wizard/avatars/x.gif").status_code == 404
     # encoded traversal never matches the route (SPA fallback answers instead)
-    r = client.get("/api/heimdall/avatars/..%2Fsecret.png")
+    r = client.get("/api/wizard/avatars/..%2Fsecret.png")
     assert "image/png" not in r.headers["content-type"]
     assert len(calls) == n
 
 
-def test_heimdall_write_proxy(client, monkeypatch):
+def test_wizard_write_proxy(client, monkeypatch):
     import io
     import json as jsonlib
     import urllib.request
@@ -244,7 +244,7 @@ def test_heimdall_write_proxy(client, monkeypatch):
 
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
 
-    r = client.post("/api/heimdall/personas/implementer", json={"model": "opus"})
+    r = client.post("/api/wizard/personas/implementer", json={"model": "opus"})
     assert r.status_code == 200 and r.json()["detail"] == "ok"
     assert captured["auth"] == "Bearer sekrit"
     assert captured["url"].endswith("/api/personas/implementer")
@@ -257,14 +257,14 @@ def test_heimdall_write_proxy(client, monkeypatch):
         )
 
     monkeypatch.setattr(urllib.request, "urlopen", refuse)
-    r = client.post("/api/heimdall/personas/implementer", json={"tools": "Bash(*)"})
+    r = client.post("/api/wizard/personas/implementer", json={"tools": "Bash(*)"})
     assert r.status_code == 403 and r.json()["detail"] == "jail"
 
-    assert client.post("/api/heimdall/personas/Bad Name", json={}).status_code == 404
+    assert client.post("/api/wizard/personas/Bad Name", json={}).status_code == 404
 
 
-def test_heimdall_write_disabled_without_token(client, monkeypatch):
+def test_wizard_write_disabled_without_token(client, monkeypatch):
     from atlas import main as main_mod
 
     monkeypatch.setattr(main_mod, "ORC_API_TOKEN", "")
-    assert client.post("/api/heimdall/personas/x", json={}).status_code == 503
+    assert client.post("/api/wizard/personas/x", json={}).status_code == 503
